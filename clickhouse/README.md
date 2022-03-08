@@ -1,9 +1,4 @@
-# clickhouse-srv
-
-[![](http://meritbadge.herokuapp.com/clickhouse-srv)](https://crates.io/crates/clickhouse-srv)
-[![](https://img.shields.io/crates/d/clickhouse-srv.svg)](https://crates.io/crates/clickhouse-srv)
-[![](https://img.shields.io/crates/dv/clickhouse-srv.svg)](https://crates.io/crates/clickhouse-srv)
-[![](https://docs.rs/clickhouse-srv/badge.svg)](https://docs.rs/clickhouse-srv/)
+# OpenSrv - ClickHouse
 
 Bindings for emulating a ClickHouse server.
 
