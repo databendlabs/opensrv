@@ -25,6 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
       - uses: Swatinem/rust-cache@v1
       - name: Install cargo-udeps
         uses: actions-rs/cargo@v1
@@ -32,10 +35,7 @@ jobs:
           command: install
           args: cargo-udeps --locked
       - name: Check udeps
-        uses: actions-rs/cargo@v1
-        with:
-          command: udeps
-          args: --workspace
+        run: cargo +nightly udeps
 
   security:
     name: Audit security
