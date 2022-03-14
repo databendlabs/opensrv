@@ -35,7 +35,7 @@ jobs:
           command: install
           args: cargo-udeps --locked
       - name: Check udeps
-        run: cargo +nightly udeps
+        run: cargo +nightly udeps --all-targets
 
   security:
     name: Audit security
@@ -53,6 +53,25 @@ jobs:
         with:
           command: audit
 
+  style:
+    name: Audit style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Check clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --workspace --tests --all-features -- -D warnings
+
+      - name: Check format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
   test:
     name: Run tests
     strategy:
@@ -62,33 +81,19 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v2
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
 
-    - uses: Swatinem/rust-cache@v1
+      - name: Cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
 
-    - name: Cargo build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-
-    - name: Check clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: --workspace --tests --all-features -- -D warnings
-
-    - name: Check format
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: --all -- --check
-
-    - name: Cargo test
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --workspace -- --ignored
+      - name: Cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace -- --ignored
 
   pass:
     name: All tests passed
@@ -96,6 +101,7 @@ jobs:
     needs:
       - dependency
       - security
+      - style
       - test
     steps:
       - run: exit 0
