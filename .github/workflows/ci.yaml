@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '25 4 * * *'
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  license:
+    name: Check license header
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: apache/skywalking-eyes@main
+        with:
+          config: .github/licenserc.yaml
+
+  dependency:
+    name: Check dependency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@v1
+      - name: Install cargo-udeps
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-udeps --locked
+      - name: Check udeps
+        run: cargo +nightly udeps --all-targets
+
+  security:
+    name: Audit security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+      - name: Install cargo-aduit
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-audit
+      - name: Audit dependencies
+        uses: actions-rs/cargo@v1
+        with:
+          command: audit
+
+  style:
+    name: Audit style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Check clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --workspace --tests --all-features -- -D warnings
+
+      - name: Check format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  test:
+    name: Run tests
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+
+      - name: Cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace -- --ignored
+
+  pass:
+    name: All tests passed
+    runs-on: ubuntu-latest
+    needs:
+      - dependency
+      - security
+      - style
+      - test
+    steps:
+      - run: exit 0
