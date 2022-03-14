@@ -1,0 +1,16 @@
+header:
+  license:
+    spdx-id: Apache-2.0
+    copyright-owner: Datafuse Labs
+  paths-ignore:
+    # Ignore hidden files
+    - ".cargo"
+    - ".github"
+    - ".gitignore"
+    # Ignore LICENSE and Makefile
+    - "LICENSE"
+    # Ignore docs and generated files
+    - "**/*.md"
+    - "**/*.yaml"
+    - "**/*.toml"
+    - "**/*.lock"
