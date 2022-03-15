@@ -14,7 +14,7 @@ OpenSrv is in **alpha** stage, the goal is to provide high performance and highl
 You may be looking for:
 
 - [ClickHouse Examples](./clickhouse/examples)
-- [MySql/MariaDB Examples](./mysql/examples)
+- [MySQL/MariaDB Examples](./mysql/examples)
 
 ## Contributing
 
