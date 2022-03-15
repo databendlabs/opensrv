@@ -316,7 +316,7 @@ pub trait AsyncMysqlShim<W: Write + Send> {
     }
 
     /// authenticate method for the specified plugin
-    fn authenticate(
+    async fn authenticate(
         &self,
         _auth_plugin: &str,
         _username: &[u8],
@@ -806,7 +806,7 @@ pub struct AsyncMysqlIntermediary<B, S: AsyncRead + AsyncWrite + Unpin> {
     writer: packet::PacketWriter<Cursor<Vec<u8>>>,
 }
 
-impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send, S: AsyncRead + AsyncWrite + Unpin>
+impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite + Unpin>
     AsyncMysqlIntermediary<B, S>
 {
     /// Create a new server over two one-way channels and process client commands until the client
@@ -976,12 +976,16 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send, S: AsyncRead + AsyncWrite + Unpi
 
             self.writer.set_seq(seq + 1);
 
-            if !self.shim.authenticate(
-                auth_plugin_expect,
-                &handshake.username,
-                &scramble,
-                auth_response.as_slice(),
-            ) {
+            if !self
+                .shim
+                .authenticate(
+                    auth_plugin_expect,
+                    &handshake.username,
+                    &scramble,
+                    auth_response.as_slice(),
+                )
+                .await
+            {
                 let err_msg = format!(
                     "Authenticate failed, user: {:?}, auth_plugin: {:?}",
                     String::from_utf8_lossy(&handshake.username),
