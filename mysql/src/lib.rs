@@ -622,13 +622,22 @@ impl<B: MysqlShim<W>, R: Read, W: Write> MysqlIntermediary<B, R, W> {
                 self.writer.flush()?;
                 return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
             }
+
+            if let Some(Ok(db)) = handshake.db.as_ref().map(|x| std::str::from_utf8(x)) {
+                let w = InitWriter {
+                    client_capabilities: self.client_capabilities,
+                    writer: &mut self.writer,
+                };
+                self.shim.on_init(db, w)?;
+            } else {
+                writers::write_ok_packet(
+                    &mut self.writer,
+                    self.client_capabilities,
+                    OkResponse::default(),
+                )?;
+            }
         }
 
-        writers::write_ok_packet(
-            &mut self.writer,
-            self.client_capabilities,
-            OkResponse::default(),
-        )?;
         self.writer.flush()?;
 
         Ok(())
@@ -999,13 +1008,22 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                 self.writer_flush().await?;
                 return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
             }
+
+            if let Some(Ok(db)) = handshake.db.as_ref().map(|x| std::str::from_utf8(x)) {
+                let w = InitWriter {
+                    client_capabilities: self.client_capabilities,
+                    writer: &mut self.writer,
+                };
+                self.shim.on_init(db, w).await?;
+            } else {
+                writers::write_ok_packet(
+                    &mut self.writer,
+                    self.client_capabilities,
+                    OkResponse::default(),
+                )?;
+            }
         }
 
-        writers::write_ok_packet(
-            &mut self.writer,
-            self.client_capabilities,
-            OkResponse::default(),
-        )?;
         self.writer_flush().await?;
 
         Ok(())
