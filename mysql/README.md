@@ -8,7 +8,7 @@ applications to use your database over the existing ones. This crate solves that
 acting as a MySQL server, and delegating operations such as querying and query execution to
 user-defined logic.
 
-To start, implement `MysqlShim/AsyncMysqlShim` for your backend, and create a `MysqlIntermediary/AsyncMysqlIntermediary` over an
+To start, implement `AsyncMysqlShim` for your backend, and create a `AsyncMysqlIntermediary` over an
 instance of your backend and a connection stream. The appropriate methods will be called on
 your backend whenever a client issues a `QUERY`, `PREPARE`, or `EXECUTE` command, and you will
 have a chance to respond appropriately. For example, to write a shim that always responds to
@@ -16,47 +16,59 @@ all commands with a "no results" reply:
 
 ```rust
 use std::io;
-use std::net;
-use std::thread;
 
 use opensrv_mysql::*;
+use tokio::net::TcpListener;
 
 struct Backend;
 
-impl<W: io::Write> MysqlShim<W> for Backend {
+#[async_trait::async_trait]
+impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
     type Error = io::Error;
 
-    fn on_prepare(&mut self, _: &str, info: StatementMetaWriter<W>) -> io::Result<()> {
+    async fn on_prepare<'a>(
+        &'a mut self,
+        _: &'a str,
+        info: StatementMetaWriter<'a, W>,
+    ) -> io::Result<()> {
         info.reply(42, &[], &[])
     }
-    fn on_execute(
-        &mut self,
+
+    async fn on_execute<'a>(
+        &'a mut self,
         _: u32,
         _: opensrv_mysql::ParamParser,
-        results: QueryResultWriter<W>,
+        results: QueryResultWriter<'a, W>,
     ) -> io::Result<()> {
         results.completed(OkResponse::default())
     }
-    fn on_close(&mut self, _: u32) {}
 
-    fn on_query(&mut self, sql: &str, results: QueryResultWriter<W>) -> io::Result<()> {
+    async fn on_close(&mut self, _: u32) {}
+
+    async fn on_query<'a>(
+        &'a mut self,
+        sql: &'a str,
+        results: QueryResultWriter<'a, W>,
+    ) -> io::Result<()> {
         println!("execute sql {:?}", sql);
         results.start(&[])?.finish()
     }
 }
 
-fn main() {
-    let mut threads = Vec::new();
-    let listener = net::TcpListener::bind("127.0.0.1:3306").unwrap();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = TcpListener::bind("0.0.0.0:3306").await?;
 
-    while let Ok((s, _)) = listener.accept() {
-        threads.push(thread::spawn(move || {
-            MysqlIntermediary::run_on_tcp(Backend, s).unwrap();
-        }));
-    }
-
-    for t in threads {
-        t.join().unwrap();
+    loop {
+        let (stream, _) = listener.accept().await?;
+        tokio::spawn(async move { AsyncMysqlIntermediary::run_on(Backend, stream).await });
     }
 }
 ```
+
+This example can be exected with:
+```
+cargo run --example=serve_one
+```
+
+More examples can be found [here](examples).

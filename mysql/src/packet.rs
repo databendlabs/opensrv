@@ -97,6 +97,7 @@ impl<R> PacketReader<R> {
 }
 
 impl<R: Read> PacketReader<R> {
+    #[allow(dead_code)]
     pub fn next(&mut self) -> io::Result<Option<(u8, Packet<'_>)>> {
         self.start = self.bytes.len() - self.remaining;
 
