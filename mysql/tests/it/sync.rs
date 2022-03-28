@@ -13,17 +13,17 @@
 // limitations under the License.
 
 use std::io;
-use std::net;
-use std::thread;
+use std::io::Cursor;
 
 use mysql::prelude::*;
 use mysql::Opts;
 use mysql_common as myc;
 use opensrv_mysql::OkResponse;
 use opensrv_mysql::{
-    Column, ErrorKind, InitWriter, MysqlIntermediary, MysqlShim, ParamParser, QueryResultWriter,
-    StatementMetaWriter,
+    AsyncMysqlIntermediary, AsyncMysqlShim, Column, ErrorKind, InitWriter, ParamParser,
+    QueryResultWriter, StatementMetaWriter,
 };
+use tokio::net::TcpListener;
 
 struct TestingShim<Q, P, E, I> {
     columns: Vec<Column>,
@@ -34,47 +34,55 @@ struct TestingShim<Q, P, E, I> {
     on_i: I,
 }
 
-impl<Q, P, E, I> MysqlShim<net::TcpStream> for TestingShim<Q, P, E, I>
+#[async_trait::async_trait]
+impl<Q, P, E, I> AsyncMysqlShim<Cursor<Vec<u8>>> for TestingShim<Q, P, E, I>
 where
-    Q: FnMut(&str, QueryResultWriter<net::TcpStream>) -> io::Result<()>,
-    P: FnMut(&str) -> u32,
-    E: FnMut(
-        u32,
-        Vec<opensrv_mysql::ParamValue>,
-        QueryResultWriter<net::TcpStream>,
-    ) -> io::Result<()>,
-    I: FnMut(&str, InitWriter<net::TcpStream>) -> io::Result<()>,
+    Q: 'static + Send + Sync + FnMut(&str, QueryResultWriter<Cursor<Vec<u8>>>) -> io::Result<()>,
+    P: 'static + Send + Sync + FnMut(&str) -> u32,
+    E: 'static
+        + Send
+        + Sync
+        + FnMut(
+            u32,
+            Vec<opensrv_mysql::ParamValue>,
+            QueryResultWriter<Cursor<Vec<u8>>>,
+        ) -> io::Result<()>,
+    I: 'static + Send + Sync + FnMut(&str, InitWriter<Cursor<Vec<u8>>>) -> io::Result<()>,
 {
     type Error = io::Error;
 
-    fn on_prepare(
-        &mut self,
-        query: &str,
-        info: StatementMetaWriter<net::TcpStream>,
+    async fn on_prepare<'a>(
+        &'a mut self,
+        query: &'a str,
+        info: StatementMetaWriter<'a, Cursor<Vec<u8>>>,
     ) -> io::Result<()> {
         let id = (self.on_p)(query);
         info.reply(id, &self.params, &self.columns)
     }
 
-    fn on_execute(
-        &mut self,
+    async fn on_execute<'a>(
+        &'a mut self,
         id: u32,
-        params: ParamParser,
-        results: QueryResultWriter<net::TcpStream>,
+        params: ParamParser<'a>,
+        results: QueryResultWriter<'a, Cursor<Vec<u8>>>,
     ) -> io::Result<()> {
         (self.on_e)(id, params.into_iter().collect(), results)
     }
 
-    fn on_close(&mut self, _: u32) {}
+    async fn on_close(&mut self, _: u32) {}
 
-    fn on_init(&mut self, schema: &str, writer: InitWriter<net::TcpStream>) -> io::Result<()> {
+    async fn on_init<'a>(
+        &'a mut self,
+        schema: &'a str,
+        writer: InitWriter<'a, Cursor<Vec<u8>>>,
+    ) -> io::Result<()> {
         (self.on_i)(schema, writer)
     }
 
-    fn on_query(
-        &mut self,
-        query: &str,
-        results: QueryResultWriter<net::TcpStream>,
+    async fn on_query<'a>(
+        &'a mut self,
+        query: &'a str,
+        results: QueryResultWriter<'a, Cursor<Vec<u8>>>,
     ) -> io::Result<()> {
         (self.on_q)(query, results)
     }
@@ -82,16 +90,17 @@ where
 
 impl<Q, P, E, I> TestingShim<Q, P, E, I>
 where
-    Q: 'static + Send + FnMut(&str, QueryResultWriter<net::TcpStream>) -> io::Result<()>,
-    P: 'static + Send + FnMut(&str) -> u32,
+    Q: 'static + Send + Sync + FnMut(&str, QueryResultWriter<Cursor<Vec<u8>>>) -> io::Result<()>,
+    P: 'static + Send + Sync + FnMut(&str) -> u32,
     E: 'static
         + Send
+        + Sync
         + FnMut(
             u32,
             Vec<opensrv_mysql::ParamValue>,
-            QueryResultWriter<net::TcpStream>,
+            QueryResultWriter<Cursor<Vec<u8>>>,
         ) -> io::Result<()>,
-    I: 'static + Send + FnMut(&str, InitWriter<net::TcpStream>) -> io::Result<()>,
+    I: 'static + Send + Sync + FnMut(&str, InitWriter<Cursor<Vec<u8>>>) -> io::Result<()>,
 {
     fn new(on_q: Q, on_p: P, on_e: E, on_i: I) -> Self {
         TestingShim {
@@ -116,22 +125,27 @@ where
 
     fn test<C>(self, c: C)
     where
-        C: FnOnce(&mut mysql::Conn),
+        C: 'static + Send + FnOnce(&mut mysql::Conn),
     {
-        let listener = net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let jh = thread::spawn(move || {
-            let (s, _) = listener.accept().unwrap();
-            MysqlIntermediary::run_on_tcp(self, s)
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let port = rt.block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                let (s, _) = listener.accept().await.unwrap();
+                AsyncMysqlIntermediary::run_on(self, s).await
+            });
+            port
         });
+        // rt.shutdown_background();
 
         let mut db =
             mysql::Conn::new(Opts::from_url(&format!("mysql://127.0.0.1:{}", port)).unwrap())
                 .unwrap();
-
         c(&mut db);
-        drop(db);
-        jh.join().unwrap().unwrap();
     }
 }
 
@@ -274,9 +288,9 @@ fn error_response() {
             assert_eq!(
                 e,
                 mysql::error::MySqlError {
-                    state: String::from_utf8(err.0.sqlstate().to_vec()).unwrap(),
-                    message: err.1.to_owned(),
-                    code: err.0 as u16,
+                    state: String::from_utf8(ErrorKind::ER_NO.sqlstate().to_vec()).unwrap(),
+                    message: "clearly not".to_owned(),
+                    code: ErrorKind::ER_NO as u16,
                 }
             );
         } else {
@@ -287,7 +301,6 @@ fn error_response() {
 
 #[test]
 fn error_in_result_set_response() {
-    let err = (ErrorKind::ER_NO, "clearly not");
     TestingShim::new(
         move |_, w| {
             let cols = &[Column {
@@ -298,7 +311,7 @@ fn error_in_result_set_response() {
             }];
             let mut w = w.start(cols)?;
             w.write_col(1024)?;
-            w.finish_error(err.0, &err.1.as_bytes())
+            w.finish_error(ErrorKind::ER_NO, &"clearly not".as_bytes())
         },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
@@ -312,9 +325,9 @@ fn error_in_result_set_response() {
             assert_eq!(
                 e,
                 mysql::error::MySqlError {
-                    state: String::from_utf8(err.0.sqlstate().to_vec()).unwrap(),
-                    message: err.1.to_owned(),
-                    code: err.0 as u16,
+                    state: String::from_utf8(ErrorKind::ER_NO.sqlstate().to_vec()).unwrap(),
+                    message: "clearly not".to_owned(),
+                    code: ErrorKind::ER_NO as u16,
                 }
             );
         } else {

@@ -15,38 +15,48 @@
 //! After running this, you should be able to run:
 //!
 //! ```console
-//! $ echo "SELECT * FROM foo" | mysql -h 127.0.0.1 --table
+//! $ echo "SELECT * FROM foo" | mysql -h 127.0.0.1 -u default --table
 //! $
 //! ```
 
 use std::io;
 use std::iter;
-use std::net;
-use std::thread;
 
 use mysql_common as myc;
 use opensrv_mysql::*;
+use tokio::net::TcpListener;
 
 struct Backend;
 
-impl<W: io::Write> MysqlShim<W> for Backend {
+#[async_trait::async_trait]
+impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
     type Error = io::Error;
 
-    fn on_prepare(&mut self, _: &str, info: StatementMetaWriter<W>) -> io::Result<()> {
+    async fn on_prepare<'a>(
+        &'a mut self,
+        _: &'a str,
+        info: StatementMetaWriter<'a, W>,
+    ) -> io::Result<()> {
         info.reply(42, &[], &[])
     }
-    fn on_execute(
-        &mut self,
+
+    async fn on_execute<'a>(
+        &'a mut self,
         _: u32,
         _: opensrv_mysql::ParamParser,
-        results: QueryResultWriter<W>,
+        results: QueryResultWriter<'a, W>,
     ) -> io::Result<()> {
         let resp = OkResponse::default();
         results.completed(resp)
     }
-    fn on_close(&mut self, _: u32) {}
 
-    fn on_query(&mut self, sql: &str, results: QueryResultWriter<W>) -> io::Result<()> {
+    async fn on_close(&mut self, _: u32) {}
+
+    async fn on_query<'a>(
+        &'a mut self,
+        sql: &'a str,
+        results: QueryResultWriter<'a, W>,
+    ) -> io::Result<()> {
         println!("execute sql {:?}", sql);
 
         let cols = &[Column {
@@ -64,7 +74,7 @@ impl<W: io::Write> MysqlShim<W> for Backend {
     }
 
     /// authenticate method for the specified plugin
-    fn authenticate(
+    async fn authenticate(
         &self,
         _auth_plugin: &str,
         username: &[u8],
@@ -72,10 +82,6 @@ impl<W: io::Write> MysqlShim<W> for Backend {
         _auth_data: &[u8],
     ) -> bool {
         username == "default".as_bytes()
-    }
-
-    fn on_init(&mut self, _: &str, _: InitWriter<'_, W>) -> Result<(), Self::Error> {
-        Ok(())
     }
 
     fn version(&self) -> &str {
@@ -108,18 +114,13 @@ impl<W: io::Write> MysqlShim<W> for Backend {
     }
 }
 
-fn main() {
-    let mut threads = Vec::new();
-    let listener = net::TcpListener::bind("0.0.0.0:3306").unwrap();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = TcpListener::bind("0.0.0.0:3306").await?;
 
-    while let Ok((s, _)) = listener.accept() {
-        threads.push(thread::spawn(move || {
-            MysqlIntermediary::run_on_tcp(Backend, s).unwrap();
-        }));
-    }
-
-    for t in threads {
-        t.join().unwrap();
+    loop {
+        let (stream, _) = listener.accept().await?;
+        tokio::spawn(async move { AsyncMysqlIntermediary::run_on(Backend, stream).await });
     }
 }
 

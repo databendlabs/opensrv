@@ -21,7 +21,13 @@ tokio = { version = "1.17.0", features = ["io-util", "io-std"] }
 
 [dev-dependencies]
 mysql = "22.0.0"
-postgres = "0.19.2"
-slab = "0.4.2"
 mysql_async = "0.29.0"
 tokio = { version = "1.0", features = ["full"] }
+
+[[example]]
+name = "serve_auth"
+path = "examples/serve_auth.rs"
+
+[[example]]
+name = "serve_one"
+path = "examples/serve_one.rs"
