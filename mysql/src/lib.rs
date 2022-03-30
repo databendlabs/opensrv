@@ -561,18 +561,11 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                     // NOTE: spec dictates no response from server
                 }
                 Command::ListFields(_) => {
-                    let cols = &[Column {
-                        table: String::new(),
-                        column: "not implemented".to_owned(),
-                        coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
-                        colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
-                    }];
-                    writers::write_column_definitions_41(
-                        cols,
-                        &mut self.writer,
-                        self.client_capabilities,
-                        true,
-                    )?;
+                    // mysql_list_fields (CommandByte::COM_FIELD_LIST / 0x04) has been deprecated in mysql 5.7
+                    // and will be removed in a future version.
+                    // The mysql command line tool issues one of these commands after switching databases with USE <DB>.
+                    // Return a invalid column definitions lead to incorrect mariadb-client behaviour,
+                    // see https://github.com/datafuselabs/databend/issues/4439
                     let ok_packet = OkResponse {
                         header: 0xfe,
                         ..Default::default()
