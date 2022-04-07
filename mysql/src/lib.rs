@@ -461,6 +461,7 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                             false,
                             self.client_capabilities,
                         );
+
                         let var = &q[b"SELECT @@".len()..];
                         let var_with_at = &q[b"SELECT ".len()..];
                         let cols = &[Column {
@@ -477,9 +478,14 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                                 w.finish()?;
                             }
                             _ => {
-                                let mut w = w.start(cols)?;
-                                w.write_row(iter::once(0))?;
-                                w.finish()?;
+                                self.shim
+                                    .on_query(
+                                        ::std::str::from_utf8(q).map_err(|e| {
+                                            io::Error::new(io::ErrorKind::InvalidData, e)
+                                        })?,
+                                        w,
+                                    )
+                                    .await?;
                             }
                         }
                     } else if !self.process_use_statement_on_query
