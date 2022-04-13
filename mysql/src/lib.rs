@@ -92,6 +92,7 @@ pub use crate::resultset::{InitWriter, QueryResultWriter, RowWriter, StatementMe
 pub use crate::value::{ToMysqlValue, Value, ValueInner};
 
 const SCRAMBLE_SIZE: usize = 20;
+const MYSQL_NATIVE_PASSWORD: &str = "mysql_native_password";
 
 #[async_trait]
 /// Implementors of this async-trait can be used to drive a MySQL-compatible database backend.
@@ -114,12 +115,12 @@ pub trait AsyncMysqlShim<W: Write + Send> {
 
     /// get auth plugin
     fn default_auth_plugin(&self) -> &str {
-        "mysql_native_password"
+        MYSQL_NATIVE_PASSWORD
     }
 
     /// get auth plugin
-    fn auth_plugin_for_username(&self, _user: &[u8]) -> &str {
-        "mysql_native_password"
+    async fn auth_plugin_for_username(&self, _user: &[u8]) -> &str {
+        MYSQL_NATIVE_PASSWORD
     }
 
     /// Default salt(scramble) for auth plugin
@@ -354,7 +355,10 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
 
             self.client_capabilities = handshake.capabilities;
             let mut auth_response = handshake.auth_response.clone();
-            let auth_plugin_expect = self.shim.auth_plugin_for_username(&handshake.username);
+            let auth_plugin_expect = self
+                .shim
+                .auth_plugin_for_username(&handshake.username)
+                .await;
 
             // auth switch
             if !auth_plugin_expect.is_empty()
