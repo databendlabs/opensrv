@@ -502,6 +502,14 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                         let schema = ::std::str::from_utf8(&q[b"USE ".len()..])
                             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                         let schema = schema.trim().trim_end_matches(';').trim_matches('`');
+                        if schema.is_empty() {
+                            w.error(
+                                errorcodes::ErrorKind::ER_NO_DB_ERROR,
+                                "No database selected".as_bytes(),
+                            )?;
+                            self.writer_flush().await?;
+                            continue;
+                        }
                         self.shim.on_init(schema, w).await?;
                     } else {
                         let w = QueryResultWriter::new(
