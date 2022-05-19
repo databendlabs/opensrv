@@ -33,12 +33,13 @@ pub use self::numeric::VectorColumnData;
 pub use self::string::StringColumnData;
 pub use self::string_pool::StringPool;
 pub use self::tuple::TupleColumnData;
+pub use crate::types::column::array::ArrayColumnData;
+
 use crate::binary::Encoder;
 use crate::binary::ReadEx;
 use crate::errors::Error;
 use crate::errors::FromSqlError;
 use crate::errors::Result;
-use crate::types::column::array::ArrayColumnData;
 use crate::types::column::decimal::DecimalAdapter;
 use crate::types::column::decimal::NullableDecimalAdapter;
 use crate::types::column::enums::Enum16Adapter;
