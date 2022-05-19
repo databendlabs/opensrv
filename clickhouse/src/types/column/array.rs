@@ -28,7 +28,7 @@ use crate::types::SqlType;
 use crate::types::Value;
 use crate::types::ValueRef;
 
-pub(crate) struct ArrayColumnData {
+pub struct ArrayColumnData {
     pub(crate) inner: ArcColumnData,
     pub(crate) offsets: List<u64>,
 }
