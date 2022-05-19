@@ -34,6 +34,11 @@ pub(crate) struct ArrayColumnData {
 }
 
 impl ArrayColumnData {
+    #[allow(dead_code)]
+    pub fn create(inner: ArcColumnData, offsets: List<u64>) -> Self {
+        ArrayColumnData { inner, offsets }
+    }
+
     pub(crate) fn load<R: ReadEx>(
         reader: &mut R,
         type_name: &str,
