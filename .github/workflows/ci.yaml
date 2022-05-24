@@ -93,7 +93,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace -- --ignored
+          args: --workspace -- --include-ignored
 
   pass:
     name: All tests passed
