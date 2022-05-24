@@ -131,21 +131,20 @@ where
             .enable_all()
             .build()
             .unwrap();
-        let port = rt.block_on(async {
+
+        rt.spawn(async move {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = listener.local_addr().unwrap().port();
             tokio::spawn(async move {
                 let (s, _) = listener.accept().await.unwrap();
                 AsyncMysqlIntermediary::run_on(self, s).await
             });
-            port
-        });
-        // rt.shutdown_background();
 
-        let mut db =
-            mysql::Conn::new(Opts::from_url(&format!("mysql://127.0.0.1:{}", port)).unwrap())
-                .unwrap();
-        c(&mut db);
+            let mut db =
+                mysql::Conn::new(Opts::from_url(&format!("mysql://127.0.0.1:{}", port)).unwrap())
+                    .unwrap();
+            c(&mut db);
+        });
     }
 }
 
