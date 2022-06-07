@@ -70,7 +70,7 @@ mod decimal;
 mod enums;
 mod options;
 
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Progress {
     pub rows: u64,
     pub bytes: u64,
@@ -91,7 +91,7 @@ impl Progress {
     }
 }
 
-#[derive(Copy, Clone, Default, Debug, PartialEq)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub(crate) struct ProfileInfo {
     pub rows: u64,
     pub bytes: u64,
@@ -101,7 +101,7 @@ pub(crate) struct ProfileInfo {
     pub calculated_rows_before_limit: bool,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ServerInfo {
     pub name: String,
     pub revision: u64,

@@ -34,7 +34,7 @@ pub struct Parser<T> {
 }
 
 /// The parser can be used to parse clickhouse client requests
-impl<'a, T: Read> Parser<T> {
+impl<T: Read> Parser<T> {
     /// Creates a new parser that parses the data behind the reader.  More
     /// than one value can be behind the reader in which case the parser can
     /// be invoked multiple times.  In other words: the stream does not have
