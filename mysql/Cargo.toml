@@ -9,7 +9,6 @@ readme = "README.md"
 
 [lib]
 doctest = false
-test = false
 
 [dependencies]
 async-trait = "0.1.52"
