@@ -351,7 +351,6 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                     "Required capability: CLIENT_PROTOCOL_41, please upgrade your MySQL client version",
                 );
                 return Err(err.into());
-
             }
 
             self.client_capabilities = handshake.capabilities;
@@ -513,8 +512,9 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                                 );
                                 self.shim
                                     .on_query(
-                                        ::std::str::from_utf8(q)
-                                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                                        ::std::str::from_utf8(q).map_err(|e| {
+                                            io::Error::new(io::ErrorKind::InvalidData, e)
+                                        })?,
                                         w,
                                     )
                                     .await?;
@@ -529,8 +529,9 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
 
                             self.shim
                                 .on_prepare(
-                                    ::std::str::from_utf8(q)
-                                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                                    ::std::str::from_utf8(q).map_err(|e| {
+                                        io::Error::new(io::ErrorKind::InvalidData, e)
+                                    })?,
                                     w,
                                 )
                                 .await?;
@@ -559,7 +560,10 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                                 .ok_or_else(|| {
                                     io::Error::new(
                                         io::ErrorKind::InvalidData,
-                                        format!("got long data packet for unknown statement {}", stmt),
+                                        format!(
+                                            "got long data packet for unknown statement {}",
+                                            stmt
+                                        ),
                                     )
                                 })?
                                 .long_data
@@ -595,8 +599,9 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                             };
                             self.shim
                                 .on_init(
-                                    ::std::str::from_utf8(schema)
-                                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                                    ::std::str::from_utf8(schema).map_err(|e| {
+                                        io::Error::new(io::ErrorKind::InvalidData, e)
+                                    })?,
                                     w,
                                 )
                                 .await?;
@@ -624,7 +629,7 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                     )?;
                     self.writer_flush().await?;
                 }
-             }
+            }
         }
         Ok(())
     }
