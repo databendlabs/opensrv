@@ -1,3 +1,4 @@
+
 name: CI
 
 on:
@@ -20,28 +21,13 @@ jobs:
         with:
           config: .github/licenserc.yaml
 
-  dependency:
-    name: Check dependency
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-      - uses: Swatinem/rust-cache@v1
-      - name: Install cargo-udeps
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-udeps --locked
-      - name: Check udeps
-        run: cargo +nightly udeps --all-targets
-
   security:
     name: Audit security
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Install Rust(stable)
+        run: rustup update stable
       - uses: Swatinem/rust-cache@v1
       - name: Install cargo-aduit
         uses: actions-rs/cargo@v1
@@ -58,8 +44,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Install Rust(stable)
+        run: rustup update stable
       - uses: Swatinem/rust-cache@v1
-
       - name: Check clippy
         uses: actions-rs/cargo@v1
         with:
@@ -82,6 +69,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+
+      - name: Install Rust(stable)
+        run: rustup update stable
       - uses: Swatinem/rust-cache@v1
 
       - name: Cargo build
@@ -92,14 +82,13 @@ jobs:
       - name: Cargo test
         uses: actions-rs/cargo@v1
         with:
-          command: test
-          args: --workspace -- --include-ignored
+          command: test 
+          args: --lib --bins --tests -- --include-ignored
 
   pass:
     name: All tests passed
     runs-on: ubuntu-latest
     needs:
-      - dependency
       - security
       - style
       - test
