@@ -50,7 +50,7 @@ pub struct OptionsSource {
 impl fmt::Debug for OptionsSource {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let guard = self.state.lock().unwrap();
-        match *guard {
+        match &*guard {
             State::Url(ref url) => write!(f, "Url({})", url),
             State::Raw(ref options) => write!(f, "{:?}", options),
         }
@@ -563,7 +563,7 @@ pub fn get_database_from_url(url: &Url) -> Result<Option<&str>> {
 
 #[allow(clippy::result_unit_err)]
 pub fn parse_duration(source: &str) -> std::result::Result<Duration, ()> {
-    let digits_count = source.chars().take_while(|c| c.is_digit(10)).count();
+    let digits_count = source.chars().take_while(|c| c.is_ascii_digit()).count();
 
     let left: String = source.chars().take(digits_count).collect();
     let right: String = source.chars().skip(digits_count).collect();
