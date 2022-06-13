@@ -351,6 +351,7 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                     "Required capability: CLIENT_PROTOCOL_41, please upgrade your MySQL client version",
                 );
                 return Err(err.into());
+
             }
 
             self.client_capabilities = handshake.capabilities;
@@ -455,162 +456,175 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
         let mut stmts: HashMap<u32, _> = HashMap::new();
         while let Some((seq, packet)) = self.reader.next_async().await? {
             self.writer.set_seq(seq + 1);
-            let cmd = commands::parse(&packet).unwrap().1;
+            let res = commands::parse(&packet);
+            match res {
+                Ok(cmd) => {
+                    match cmd.1 {
+                        Command::Query(q) => {
+                            if q.starts_with(b"SELECT @@") || q.starts_with(b"select @@") {
+                                let w = QueryResultWriter::new(
+                                    &mut self.writer,
+                                    false,
+                                    self.client_capabilities,
+                                );
 
-            match cmd {
-                Command::Query(q) => {
-                    if q.starts_with(b"SELECT @@") || q.starts_with(b"select @@") {
-                        let w = QueryResultWriter::new(
-                            &mut self.writer,
-                            false,
-                            self.client_capabilities,
-                        );
+                                let var = &q[b"SELECT @@".len()..];
+                                let var_with_at = &q[b"SELECT ".len()..];
+                                let cols = &[Column {
+                                    table: String::new(),
+                                    column: String::from_utf8_lossy(var_with_at).to_string(),
+                                    coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                                    colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                                }];
 
-                        let var = &q[b"SELECT @@".len()..];
-                        let var_with_at = &q[b"SELECT ".len()..];
-                        let cols = &[Column {
-                            table: String::new(),
-                            column: String::from_utf8_lossy(var_with_at).to_string(),
-                            coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
-                            colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
-                        }];
-
-                        match var {
-                            b"max_allowed_packet" => {
-                                let mut w = w.start(cols)?;
-                                w.write_row(iter::once(67108864u32))?;
-                                w.finish()?;
-                            }
-                            _ => {
+                                match var {
+                                    b"max_allowed_packet" => {
+                                        let mut w = w.start(cols)?;
+                                        w.write_row(iter::once(67108864u32))?;
+                                        w.finish()?;
+                                    }
+                                    _ => {
+                                        self.shim
+                                            .on_query(
+                                                ::std::str::from_utf8(q).map_err(|e| {
+                                                    io::Error::new(io::ErrorKind::InvalidData, e)
+                                                })?,
+                                                w,
+                                            )
+                                            .await?;
+                                    }
+                                }
+                            } else if !self.process_use_statement_on_query
+                                && (q.starts_with(b"USE ") || q.starts_with(b"use "))
+                            {
+                                let w = InitWriter {
+                                    client_capabilities: self.client_capabilities,
+                                    writer: &mut self.writer,
+                                };
+                                let schema = ::std::str::from_utf8(&q[b"USE ".len()..])
+                                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                                let schema = schema.trim().trim_end_matches(';').trim_matches('`');
+                                self.shim.on_init(schema, w).await?;
+                            } else {
+                                let w = QueryResultWriter::new(
+                                    &mut self.writer,
+                                    false,
+                                    self.client_capabilities,
+                                );
                                 self.shim
                                     .on_query(
-                                        ::std::str::from_utf8(q).map_err(|e| {
-                                            io::Error::new(io::ErrorKind::InvalidData, e)
-                                        })?,
+                                        ::std::str::from_utf8(q)
+                                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
                                         w,
                                     )
                                     .await?;
                             }
                         }
-                    } else if !self.process_use_statement_on_query
-                        && (q.starts_with(b"USE ") || q.starts_with(b"use "))
-                    {
-                        let w = InitWriter {
-                            client_capabilities: self.client_capabilities,
-                            writer: &mut self.writer,
-                        };
-                        let schema = ::std::str::from_utf8(&q[b"USE ".len()..])
-                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                        let schema = schema.trim().trim_end_matches(';').trim_matches('`');
-                        self.shim.on_init(schema, w).await?;
-                    } else {
-                        let w = QueryResultWriter::new(
-                            &mut self.writer,
-                            false,
-                            self.client_capabilities,
-                        );
-                        self.shim
-                            .on_query(
-                                ::std::str::from_utf8(q)
-                                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-                                w,
-                            )
-                            .await?;
-                    }
-                }
-                Command::Prepare(q) => {
-                    let w = StatementMetaWriter {
-                        writer: &mut self.writer,
-                        stmts: &mut stmts,
-                        client_capabilities: self.client_capabilities,
-                    };
+                        Command::Prepare(q) => {
+                            let w = StatementMetaWriter {
+                                writer: &mut self.writer,
+                                stmts: &mut stmts,
+                                client_capabilities: self.client_capabilities,
+                            };
 
-                    self.shim
-                        .on_prepare(
-                            ::std::str::from_utf8(q)
-                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-                            w,
-                        )
-                        .await?;
-                }
-                Command::Execute { stmt, params } => {
-                    let state = stmts.get_mut(&stmt).ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!("asked to execute unknown statement {}", stmt),
-                        )
-                    })?;
-                    {
-                        let params = params::ParamParser::new(params, state);
-                        let w = QueryResultWriter::new(
-                            &mut self.writer,
-                            true,
-                            self.client_capabilities,
-                        );
-                        self.shim.on_execute(stmt, params, w).await?;
+                            self.shim
+                                .on_prepare(
+                                    ::std::str::from_utf8(q)
+                                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                                    w,
+                                )
+                                .await?;
+                        }
+                        Command::Execute { stmt, params } => {
+                            let state = stmts.get_mut(&stmt).ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    format!("asked to execute unknown statement {}", stmt),
+                                )
+                            })?;
+                            {
+                                let params = params::ParamParser::new(params, state);
+                                let w = QueryResultWriter::new(
+                                    &mut self.writer,
+                                    true,
+                                    self.client_capabilities,
+                                );
+                                self.shim.on_execute(stmt, params, w).await?;
+                            }
+                            state.long_data.clear();
+                        }
+                        Command::SendLongData { stmt, param, data } => {
+                            stmts
+                                .get_mut(&stmt)
+                                .ok_or_else(|| {
+                                    io::Error::new(
+                                        io::ErrorKind::InvalidData,
+                                        format!("got long data packet for unknown statement {}", stmt),
+                                    )
+                                })?
+                                .long_data
+                                .entry(param)
+                                .or_insert_with(Vec::new)
+                                .extend(data);
+                        }
+                        Command::Close(stmt) => {
+                            self.shim.on_close(stmt).await;
+                            stmts.remove(&stmt);
+                            // NOTE: spec dictates no response from server
+                        }
+                        Command::ListFields(_) => {
+                            // mysql_list_fields (CommandByte::COM_FIELD_LIST / 0x04) has been deprecated in mysql 5.7
+                            // and will be removed in a future version.
+                            // The mysql command line tool issues one of these commands after switching databases with USE <DB>.
+                            // Return a invalid column definitions lead to incorrect mariadb-client behaviour,
+                            // see https://github.com/datafuselabs/databend/issues/4439
+                            let ok_packet = OkResponse {
+                                header: 0xfe,
+                                ..Default::default()
+                            };
+                            writers::write_ok_packet(
+                                &mut self.writer,
+                                self.client_capabilities,
+                                ok_packet,
+                            )?;
+                        }
+                        Command::Init(schema) => {
+                            let w = InitWriter {
+                                client_capabilities: self.client_capabilities,
+                                writer: &mut self.writer,
+                            };
+                            self.shim
+                                .on_init(
+                                    ::std::str::from_utf8(schema)
+                                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                                    w,
+                                )
+                                .await?;
+                        }
+                        Command::Ping => {
+                            writers::write_ok_packet(
+                                &mut self.writer,
+                                self.client_capabilities,
+                                OkResponse::default(),
+                            )?;
+                        }
+                        Command::Quit => {
+                            break;
+                        }
                     }
-                    state.long_data.clear();
+                    self.writer_flush().await?;
                 }
-                Command::SendLongData { stmt, param, data } => {
-                    stmts
-                        .get_mut(&stmt)
-                        .ok_or_else(|| {
-                            io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                format!("got long data packet for unknown statement {}", stmt),
-                            )
-                        })?
-                        .long_data
-                        .entry(param)
-                        .or_insert_with(Vec::new)
-                        .extend(data);
-                }
-                Command::Close(stmt) => {
-                    self.shim.on_close(stmt).await;
-                    stmts.remove(&stmt);
-                    // NOTE: spec dictates no response from server
-                }
-                Command::ListFields(_) => {
-                    // mysql_list_fields (CommandByte::COM_FIELD_LIST / 0x04) has been deprecated in mysql 5.7
-                    // and will be removed in a future version.
-                    // The mysql command line tool issues one of these commands after switching databases with USE <DB>.
-                    // Return a invalid column definitions lead to incorrect mariadb-client behaviour,
-                    // see https://github.com/datafuselabs/databend/issues/4439
-                    let ok_packet = OkResponse {
-                        header: 0xfe,
-                        ..Default::default()
-                    };
-                    writers::write_ok_packet(
-                        &mut self.writer,
-                        self.client_capabilities,
-                        ok_packet,
-                    )?;
-                }
-                Command::Init(schema) => {
-                    let w = InitWriter {
-                        client_capabilities: self.client_capabilities,
-                        writer: &mut self.writer,
-                    };
-                    self.shim
-                        .on_init(
-                            ::std::str::from_utf8(schema)
-                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-                            w,
-                        )
-                        .await?;
-                }
-                Command::Ping => {
+                Err(_) => {
+                    // if parser err, we need also stay the conn,
+                    // because we can not support all command.
                     writers::write_ok_packet(
                         &mut self.writer,
                         self.client_capabilities,
                         OkResponse::default(),
                     )?;
+                    self.writer_flush().await?;
                 }
-                Command::Quit => {
-                    break;
-                }
-            }
-            self.writer_flush().await?;
+             }
         }
         Ok(())
     }
