@@ -1,2 +1,2 @@
 [workspace]
-members = ["clickhouse", "mysql"]
+members = ["clickhouse", "mysql", "utils/micromarshal"]
