@@ -19,7 +19,6 @@ use std::str::Utf8Error;
 use std::string::FromUtf8Error;
 
 use thiserror::Error;
-#[cfg(feature = "tokio_io")]
 use tokio::time::error::Elapsed;
 use url::ParseError;
 
@@ -207,7 +206,6 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
-#[cfg(feature = "tokio_io")]
 impl From<Elapsed> for Error {
     fn from(_err: Elapsed) -> Self {
         Error::Driver(DriverError::Timeout)
