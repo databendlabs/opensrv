@@ -15,3 +15,9 @@ Useful tips:
 - Check/Build/Test/Clippy specific package: `cargo <cmd> --package <package>`
 - Test specific function: `cargo test --package opensrv-mysql r#async::it_connects`
 
+For changelog:
+
+```
+pip install git-changelog
+git-changelog -o CHANGELOG.md -s angular -t keepachangelog .
+```
