@@ -16,7 +16,6 @@
 //!
 //! ```console
 //! $ echo "SELECT * FROM foo" | mysql -h 127.0.0.1 --table
-//! $
 //! ```
 
 use std::io;

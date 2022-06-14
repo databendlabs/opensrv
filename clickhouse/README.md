@@ -1,61 +1,12 @@
 # OpenSrv - ClickHouse
 
-Bindings for emulating a ClickHouse server.
+**Bindings for emulating a ClickHouse server.**
+
+## Usage
+
+See the full example [here](./examples/simple.rs)
 
 ```rust
-use std::env;
-use std::error::Error;
-use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
-use std::time::Instant;
-
-use futures::task::Context;
-use futures::task::Poll;
-use futures::Stream;
-use futures::StreamExt;
-use opensrv_clickhouse::connection::Connection;
-use opensrv_clickhouse::errors::Result;
-use opensrv_clickhouse::types::Block;
-use opensrv_clickhouse::types::Progress;
-use opensrv_clickhouse::CHContext;
-use opensrv_clickhouse::ClickHouseServer;
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
-
-extern crate opensrv_clickhouse;
-
-#[tokio::main]
-async fn main() -> std::result::Result<(), Box<dyn Error>> {
-    env::set_var("RUST_LOG", "clickhouse_srv=debug");
-    let host_port = "127.0.0.1:9000";
-
-    // Note that this is the Tokio TcpListener, which is fully async.
-    let listener = TcpListener::bind(host_port).await?;
-
-    tracing::info!("Server start at {}", host_port);
-
-    loop {
-        // Asynchronously wait for an inbound TcpStream.
-        let (stream, _) = listener.accept().await?;
-
-        // Spawn our handler to be run asynchronously.
-        tokio::spawn(async move {
-            if let Err(e) = ClickHouseServer::run_on_stream(
-                Arc::new(Session {
-                    last_progress_send: Instant::now(),
-                }),
-                stream,
-            )
-            .await
-            {
-                println!("Error: {:?}", e);
-            }
-        });
-    }
-}
-
 struct Session {
     last_progress_send: Instant,
 }
@@ -158,29 +109,16 @@ impl opensrv_clickhouse::ClickHouseSession for Session {
         }
     }
 }
-
-struct SimpleBlockStream {
-    idx: u32,
-    start: u32,
-    end: u32,
-    blocks: u32,
-}
-
-impl Stream for SimpleBlockStream {
-    type Item = Result<Block>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        _: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
-        self.idx += 1;
-        if self.idx > self.blocks {
-            return Poll::Ready(None);
-        }
-        let block = Some(Block::new().column("abc", (self.start..self.end).collect::<Vec<u32>>()));
-
-        thread::sleep(Duration::from_millis(100));
-        Poll::Ready(block.map(Ok))
-    }
-}
 ```
+
+## Getting help
+
+Submit [issues](https://github.com/datafuselabs/opensrv/issues/new/choose) for bug report or asking questions in [discussion](https://github.com/datafuselabs/opensrv/discussions/new?category=q-a). 
+
+## Credits
+
+This project used to be [sundy-li/clickhouse-srv](https://github.com/sundy-li/clickhouse-srv).
+
+## License
+
+Licensed under <a href="./LICENSE">Apache License, Version 2.0</a>.

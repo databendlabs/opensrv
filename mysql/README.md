@@ -1,12 +1,14 @@
 # OpenSrv - MySQL
 
-Bindings for emulating a MySQL/MariaDB server.
+**Bindings for emulating a MySQL/MariaDB server.**
 
 When developing new databases or caching layers, it can be immensely useful to test your system
 using existing applications. However, this often requires significant work modifying
 applications to use your database over the existing ones. This crate solves that problem by
 acting as a MySQL server, and delegating operations such as querying and query execution to
 user-defined logic.
+
+## Usage
 
 To start, implement `AsyncMysqlShim` for your backend, and create a `AsyncMysqlIntermediary` over an
 instance of your backend and a connection stream. The appropriate methods will be called on
@@ -67,8 +69,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 This example can be exected with:
+
 ```
 cargo run --example=serve_one
 ```
 
 More examples can be found [here](examples).
+
+## Getting help
+
+Submit [issues](https://github.com/datafuselabs/opensrv/issues/new/choose) for bug report or asking questions in [discussion](https://github.com/datafuselabs/opensrv/discussions/new?category=q-a).
+
+## Credits
+
+This project is a branch of [jonhoo/msql-srv](https://github.com/jonhoo/msql-srv) and focuses on providing asynchronous support.
+
+## License
+
+Licensed under <a href="./LICENSE">Apache License, Version 2.0</a>.
