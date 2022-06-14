@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use crate::binary;
-use crate::io::Marshal;
 use crate::types::StatBuffer;
+use micromarshal::Marshal;
 
 const MAX_VARINT_LEN64: usize = 10;
 

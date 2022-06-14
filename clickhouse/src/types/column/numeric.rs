@@ -16,8 +16,8 @@ use std::convert;
 use std::mem;
 use std::sync::Arc;
 
-use crate::io::Marshal;
-use crate::io::Unmarshal;
+use micromarshal::Marshal;
+use micromarshal::Unmarshal;
 
 use super::column_data::BoxColumnData;
 use super::column_data::ColumnData;
