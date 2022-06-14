@@ -19,12 +19,12 @@ use std::sync::Arc;
 use chrono::prelude::*;
 use chrono::Date;
 use chrono_tz::Tz;
+use micromarshal::Marshal;
+use micromarshal::Unmarshal;
 
 use crate::binary::Encoder;
 use crate::binary::ReadEx;
 use crate::errors::Result;
-use crate::io::Marshal;
-use crate::io::Unmarshal;
 use crate::types::column::array::ArrayColumnData;
 use crate::types::column::column_data::BoxColumnData;
 use crate::types::column::column_data::ColumnData;

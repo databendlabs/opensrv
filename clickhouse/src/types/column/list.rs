@@ -16,8 +16,9 @@ use std::fmt;
 use std::mem;
 use std::slice;
 
-use crate::io::Marshal;
-use crate::io::Unmarshal;
+use micromarshal::Marshal;
+use micromarshal::Unmarshal;
+
 use crate::types::StatBuffer;
 
 #[derive(Clone)]

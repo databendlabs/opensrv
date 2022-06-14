@@ -15,10 +15,11 @@
 use std::io;
 use std::mem::MaybeUninit;
 
+use micromarshal::Unmarshal;
+
 use crate::errors::DriverError;
 use crate::errors::Error;
 use crate::errors::Result;
-use crate::io::Unmarshal;
 use crate::types::column::StringPool;
 use crate::types::StatBuffer;
 

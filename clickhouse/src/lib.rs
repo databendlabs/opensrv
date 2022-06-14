@@ -34,7 +34,6 @@ pub mod cmd;
 pub mod connection;
 pub mod error_codes;
 pub mod errors;
-pub mod io;
 pub mod protocols;
 pub mod types;
 
