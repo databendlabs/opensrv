@@ -6,6 +6,9 @@ edition = "2021"
 license = "Apache-2.0"
 description = "Bindings for emulating a MySQL/MariaDB server."
 readme = "README.md"
+repository = "https://github.com/datafuselabs/opensrv"
+keywords = ["api-bindings", "database", "sql", "mock"]
+categories = ["api-bindings", "network-programming", "database-implementations"]
 
 [lib]
 doctest = false
