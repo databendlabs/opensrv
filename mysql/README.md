@@ -39,7 +39,7 @@ impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
     async fn on_execute<'a>(
         &'a mut self,
         _: u32,
-        _: opensrv_mysql::ParamParser,
+        _: opensrv_mysql::ParamParser<'a>,
         results: QueryResultWriter<'a, W>,
     ) -> io::Result<()> {
         results.completed(OkResponse::default())
