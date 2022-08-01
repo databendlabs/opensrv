@@ -28,6 +28,7 @@ use opensrv_clickhouse::errors::Result;
 use opensrv_clickhouse::types::Block;
 use opensrv_clickhouse::types::Progress;
 use opensrv_clickhouse::CHContext;
+use opensrv_clickhouse::ClickHouseMetadata;
 use opensrv_clickhouse::ClickHouseServer;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -54,6 +55,14 @@ async fn main() -> std::result::Result<(), Box<dyn Error>> {
             if let Err(e) = ClickHouseServer::run_on_stream(
                 Arc::new(Session {
                     last_progress_send: Instant::now(),
+                    metadata: ClickHouseMetadata::default()
+                        .with_name("ClickHouse-X")
+                        .with_major_version(2021)
+                        .with_minor_version(5)
+                        .with_patch_version(0)
+                        .with_tcp_protocol_version(54406)
+                        .with_timezone("UTC")
+                        .with_display_name("ClickHouse-X"),
                 }),
                 stream,
             )
@@ -67,6 +76,7 @@ async fn main() -> std::result::Result<(), Box<dyn Error>> {
 
 struct Session {
     last_progress_send: Instant,
+    metadata: ClickHouseMetadata,
 }
 
 #[async_trait::async_trait]
@@ -130,33 +140,8 @@ impl opensrv_clickhouse::ClickHouseSession for Session {
         Ok(())
     }
 
-    fn dbms_name(&self) -> &str {
-        "ClickHouse-X"
-    }
-
-    fn dbms_version_major(&self) -> u64 {
-        2021
-    }
-
-    fn dbms_version_minor(&self) -> u64 {
-        5
-    }
-
-    // the MIN_SERVER_REVISION for suggestions is 54406
-    fn dbms_tcp_protocol_version(&self) -> u64 {
-        54405
-    }
-
-    fn timezone(&self) -> &str {
-        "UTC"
-    }
-
-    fn server_display_name(&self) -> &str {
-        "ClickHouse-X"
-    }
-
-    fn dbms_version_patch(&self) -> u64 {
-        0
+    fn metadata(&self) -> &ClickHouseMetadata {
+        &self.metadata
     }
 
     fn get_progress(&self) -> Progress {
