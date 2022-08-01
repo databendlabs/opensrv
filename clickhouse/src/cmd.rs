@@ -57,20 +57,20 @@ impl Cmd {
                     return Err(err);
                 }
 
+                let metadata = connection.session.metadata();
+                let (dbms_version_major, dbms_version_minor, dbms_version_patch) =
+                    metadata.version();
                 let response = HelloResponse {
-                    dbms_name: connection.session.dbms_name().to_string(),
-                    dbms_version_major: connection.session.dbms_version_major(),
-                    dbms_version_minor: connection.session.dbms_version_minor(),
-                    dbms_tcp_protocol_version: connection.session.dbms_tcp_protocol_version(),
-                    timezone: connection.session.timezone().to_string(),
-                    server_display_name: connection.session.server_display_name().to_string(),
-                    dbms_version_patch: connection.session.dbms_version_patch(),
+                    dbms_name: metadata.name().to_string(),
+                    dbms_version_major,
+                    dbms_version_minor,
+                    dbms_tcp_protocol_version: metadata.tcp_protocol_version(),
+                    timezone: metadata.timezone().to_string(),
+                    server_display_name: metadata.display_name().to_string(),
+                    dbms_version_patch,
                 };
 
-                ctx.client_revision = connection
-                    .session
-                    .dbms_tcp_protocol_version()
-                    .min(hello.client_revision);
+                ctx.client_revision = metadata.tcp_protocol_version.min(hello.client_revision);
                 ctx.hello = Some(hello);
 
                 response.encode(&mut encoder, ctx.client_revision)?;

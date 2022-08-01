@@ -37,49 +37,170 @@ pub mod errors;
 pub mod protocols;
 pub mod types;
 
+/// Metadata for ClickHouse
+#[derive(Debug, Clone)]
+pub struct ClickHouseMetadata {
+    name: String,
+    display_name: String,
+    major_version: u64,
+    minor_version: u64,
+    patch_version: u64,
+    tcp_protocol_version: u64,
+    timezone: String,
+    has_stack_trace: bool,
+}
+
+impl Default for ClickHouseMetadata {
+    fn default() -> Self {
+        Self {
+            name: "clickhouse-server".to_string(),
+            display_name: "clickhouse-server".to_string(),
+            major_version: 19,
+            minor_version: 17,
+            patch_version: 1,
+            tcp_protocol_version: 54428,
+            timezone: "UTC".to_string(),
+            has_stack_trace: false,
+        }
+    }
+}
+
+impl ClickHouseMetadata {
+    /// ClickHouse DBMS Name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Set clickhouse DBMS name.
+    pub fn with_name(mut self, name: &str) -> Self {
+        self.name = name.to_string();
+        self
+    }
+
+    /// ClickHouse DBMS Display Name.
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    /// Set clickhouse DBMS display name.
+    pub fn with_display_name(mut self, name: &str) -> Self {
+        self.display_name = name.to_string();
+        self
+    }
+
+    /// ClickHouse's version.
+    ///
+    /// (major, minor, patch)
+    pub fn version(&self) -> (u64, u64, u64) {
+        (self.major_version, self.minor_version, self.patch_version)
+    }
+
+    /// Set clickhouse major version
+    pub fn with_major_version(mut self, v: u64) -> Self {
+        self.major_version = v;
+        self
+    }
+
+    /// Set clickhouse minor version
+    pub fn with_minor_version(mut self, v: u64) -> Self {
+        self.minor_version = v;
+        self
+    }
+
+    /// Set clickhouse patch version
+    pub fn with_patch_version(mut self, v: u64) -> Self {
+        self.patch_version = v;
+        self
+    }
+
+    /// ClickHouse's tcp_protocol_version
+    pub fn tcp_protocol_version(&self) -> u64 {
+        self.tcp_protocol_version
+    }
+
+    /// Set clickhouse tcp protocol version
+    pub fn with_tcp_protocol_version(mut self, v: u64) -> Self {
+        self.tcp_protocol_version = v;
+        self
+    }
+
+    /// ClickHouse's timezone.
+    pub fn timezone(&self) -> &str {
+        &self.timezone
+    }
+
+    /// Set clickhouse timezone
+    pub fn with_timezone(mut self, v: &str) -> Self {
+        self.timezone = v.to_string();
+        self
+    }
+
+    /// Is this session has stack trace
+    pub fn has_stack_trace(&self) -> bool {
+        self.has_stack_trace
+    }
+
+    /// Enable stack trace for clickhouse
+    pub fn with_enable_stack_trace(mut self) -> Self {
+        self.has_stack_trace = true;
+        self
+    }
+}
+
 #[async_trait::async_trait]
 pub trait ClickHouseSession: Send + Sync {
+    async fn authenticate(&self, _username: &str, _password: &[u8], _client_addr: &str) -> bool {
+        true
+    }
+
     async fn execute_query(&self, ctx: &mut CHContext, connection: &mut Connection) -> Result<()>;
-
-    fn with_stack_trace(&self) -> bool {
-        false
-    }
-
-    fn dbms_name(&self) -> &str {
-        "clickhouse-server"
-    }
-
-    // None is by default, which will use same version as client send
-    fn dbms_version_major(&self) -> u64 {
-        19
-    }
-
-    fn dbms_version_minor(&self) -> u64 {
-        17
-    }
-
-    fn dbms_tcp_protocol_version(&self) -> u64 {
-        54428
-    }
-
-    fn timezone(&self) -> &str {
-        "UTC"
-    }
-
-    fn server_display_name(&self) -> &str {
-        "clickhouse-server"
-    }
-
-    fn dbms_version_patch(&self) -> u64 {
-        1
-    }
 
     fn get_progress(&self) -> Progress {
         Progress::default()
     }
 
-    async fn authenticate(&self, _username: &str, _password: &[u8], _client_addr: &str) -> bool {
-        true
+    /// Get ClickHouse metadata.
+    fn metadata(&self) -> &ClickHouseMetadata;
+
+    #[deprecated = "use ClickHouseMetadata::has_stack_trace() instead"]
+    fn with_stack_trace(&self) -> bool {
+        self.metadata().has_stack_trace()
+    }
+
+    #[deprecated = "use ClickHouseMetadata::name() instead"]
+    fn dbms_name(&self) -> &str {
+        self.metadata().name()
+    }
+
+    // None is by default, which will use same version as client send
+    #[deprecated = "use ClickHouseMetadata::version() instead"]
+    fn dbms_version_major(&self) -> u64 {
+        self.metadata().version().0
+    }
+
+    #[deprecated = "use ClickHouseMetadata::version() instead"]
+    fn dbms_version_minor(&self) -> u64 {
+        self.metadata().version().1
+    }
+
+    #[deprecated = "use ClickHouseMetadata::tcp_protocol_version() instead"]
+    fn dbms_tcp_protocol_version(&self) -> u64 {
+        self.metadata().tcp_protocol_version()
+    }
+
+    #[deprecated = "use ClickHouseMetadata::timezone() instead"]
+    fn timezone(&self) -> &str {
+        self.metadata().timezone()
+    }
+
+    #[deprecated = "use ClickHouseMetadata::display_name() instead"]
+    fn server_display_name(&self) -> &str {
+        self.metadata().display_name()
+    }
+
+    #[deprecated = "use ClickHouseMetadata::version() instead"]
+    fn dbms_version_patch(&self) -> u64 {
+        self.metadata().version().2
     }
 }
 
@@ -148,7 +269,8 @@ impl ClickHouseServer {
 
     async fn run(&mut self, session: Arc<dyn ClickHouseSession>, stream: TcpStream) -> Result<()> {
         tracing::debug!("Handle New session");
-        let tz = session.timezone().to_string();
+        let metadata = session.metadata();
+        let tz = metadata.timezone().to_string();
         let mut ctx = CHContext::new(QueryState::default());
         let mut connection = Connection::new(stream, session, tz)?;
 

@@ -107,7 +107,7 @@ impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
         for i in 0..20 {
             scramble[i] = bs[i];
             if scramble[i] == b'\0' || scramble[i] == b'$' {
-                scramble[i] = scramble[i] + 1;
+                scramble[i] += 1;
             }
         }
         scramble
