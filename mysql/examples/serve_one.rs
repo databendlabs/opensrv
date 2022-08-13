@@ -19,6 +19,7 @@
 //! ```
 
 use std::io;
+use tokio::io::AsyncWrite;
 
 use opensrv_mysql::*;
 use tokio::net::TcpListener;
@@ -26,7 +27,7 @@ use tokio::net::TcpListener;
 struct Backend;
 
 #[async_trait::async_trait]
-impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
+impl<W: AsyncWrite + Send + Unpin> AsyncMysqlShim<W> for Backend {
     type Error = io::Error;
 
     async fn on_prepare<'a>(
@@ -34,7 +35,7 @@ impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
         _: &'a str,
         info: StatementMetaWriter<'a, W>,
     ) -> io::Result<()> {
-        info.reply(42, &[], &[])
+        info.reply(42, &[], &[]).await
     }
 
     async fn on_execute<'a>(
@@ -43,7 +44,7 @@ impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
         _: opensrv_mysql::ParamParser<'a>,
         results: QueryResultWriter<'a, W>,
     ) -> io::Result<()> {
-        results.completed(OkResponse::default())
+        results.completed(OkResponse::default()).await
     }
 
     async fn on_close(&mut self, _: u32) {}
@@ -54,7 +55,7 @@ impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
         results: QueryResultWriter<'a, W>,
     ) -> io::Result<()> {
         println!("execute sql {:?}", sql);
-        results.start(&[])?.finish()
+        results.start(&[]).await?.finish().await
     }
 }
 
@@ -64,6 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let (stream, _) = listener.accept().await?;
-        tokio::spawn(async move { AsyncMysqlIntermediary::run_on(Backend, stream).await });
+        let (r, w) = stream.into_split();
+        tokio::spawn(async move { AsyncMysqlIntermediary::run_on(Backend, r, w).await });
     }
 }

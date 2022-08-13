@@ -15,68 +15,8 @@
 use std::io;
 use std::io::prelude::*;
 
-use byteorder::{ByteOrder, LittleEndian};
 use tokio::io::AsyncRead;
 use tokio::io::AsyncReadExt;
-
-pub const U24_MAX: usize = 16_777_215;
-
-pub struct PacketWriter<W> {
-    to_write: Vec<u8>,
-    seq: u8,
-    pub w: W,
-}
-
-impl<W: Write> Write for PacketWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        use std::cmp::min;
-        let left = min(buf.len(), U24_MAX - self.to_write.len());
-        self.to_write.extend(&buf[..left]);
-
-        if self.to_write.len() == U24_MAX {
-            self.end_packet()?;
-        }
-        Ok(left)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.maybe_end_packet()?;
-        self.w.flush()
-    }
-}
-
-impl<W: Write> PacketWriter<W> {
-    pub fn new(w: W) -> Self {
-        PacketWriter {
-            to_write: vec![0, 0, 0, 0],
-            seq: 0,
-            w,
-        }
-    }
-
-    fn maybe_end_packet(&mut self) -> io::Result<()> {
-        let len = self.to_write.len() - 4;
-        if len != 0 {
-            LittleEndian::write_u24(&mut self.to_write[0..3], len as u32);
-            self.to_write[3] = self.seq;
-            self.seq = self.seq.wrapping_add(1);
-
-            self.w.write_all(&self.to_write[..])?;
-            self.to_write.truncate(4); // back to just header
-        }
-        Ok(())
-    }
-
-    pub fn end_packet(&mut self) -> io::Result<()> {
-        self.maybe_end_packet()
-    }
-}
-
-impl<W> PacketWriter<W> {
-    pub fn set_seq(&mut self, seq: u8) {
-        self.seq = seq;
-    }
-}
 
 pub struct PacketReader<R> {
     bytes: Vec<u8>,
@@ -122,7 +62,7 @@ impl<R: Read> PacketReader<R> {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             format!("{:?}", ctx),
-                        ))
+                        ));
                     }
                 }
             }
@@ -177,7 +117,7 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             format!("{:?}", ctx),
-                        ))
+                        ));
                     }
                 }
             }
@@ -256,6 +196,7 @@ impl<'a> AsRef<[u8]> for Packet<'a> {
     }
 }
 
+use crate::U24_MAX;
 use std::ops::Deref;
 
 impl<'a> Deref for Packet<'a> {

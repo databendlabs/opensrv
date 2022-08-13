@@ -26,26 +26,30 @@ extern crate mysql_common as myc;
 
 use std::collections::HashMap;
 use std::io;
-use std::io::prelude::*;
-use std::io::Cursor;
+use std::io::Write;
 use std::iter;
 
 use async_trait::async_trait;
 use tokio::io::AsyncRead;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWrite;
 
 pub use crate::myc::constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags};
 
 mod commands;
 mod errorcodes;
-mod packet;
+mod packet_reader;
+mod packet_writer;
 mod params;
 mod resultset;
 mod value;
 mod writers;
+//mod async_writers;
 
 #[cfg(test)]
 mod tests;
+
+// max payload size 2^(24-1)
+pub const U24_MAX: usize = 16_777_215;
 
 /// Meta-information abot a single column, used either to describe a prepared statement parameter
 /// or an output column.
@@ -96,7 +100,7 @@ const MYSQL_NATIVE_PASSWORD: &str = "mysql_native_password";
 
 #[async_trait]
 /// Implementors of this async-trait can be used to drive a MySQL-compatible database backend.
-pub trait AsyncMysqlShim<W: Write + Send> {
+pub trait AsyncMysqlShim<W: Send> {
     /// The error type produced by operations on this shim.
     ///
     /// Must implement `From<io::Error>` so that transport-level errors can be lifted.
@@ -214,32 +218,36 @@ const AUTH_PLUGIN_DATA_PART_1_LENGTH: usize = 8;
 
 /// A server that speaks the MySQL/MariaDB protocol, and can delegate client commands to a backend
 /// that implements [`AsyncMysqlShim`](trait.AsyncMysqlShim.html).
-pub struct AsyncMysqlIntermediary<B, S: AsyncRead + AsyncWrite + Unpin> {
+pub struct AsyncMysqlIntermediary<B, S: AsyncRead + Unpin, W> {
     pub(crate) client_capabilities: CapabilityFlags,
     process_use_statement_on_query: bool,
     shim: B,
-    reader: packet::PacketReader<S>,
-    writer: packet::PacketWriter<Cursor<Vec<u8>>>,
+    reader: packet_reader::PacketReader<S>,
+    writer: packet_writer::PacketWriter<W>,
 }
 
-impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite + Unpin>
-    AsyncMysqlIntermediary<B, S>
+impl<B, S, W> AsyncMysqlIntermediary<B, S, W>
+where
+    W: AsyncWrite + Send + Unpin,
+    B: AsyncMysqlShim<W> + Send + Sync,
+    S: AsyncRead + Unpin,
 {
     /// Create a new server over two one-way channels and process client commands until the client
     /// disconnects or an error occurs.
-    pub async fn run_on(shim: B, stream: S) -> Result<(), B::Error> {
-        Self::run_with_options(shim, stream, &Default::default()).await
+    pub async fn run_on(shim: B, stream: S, output_stream: W) -> Result<(), B::Error> {
+        Self::run_with_options(shim, stream, output_stream, &Default::default()).await
     }
 
     /// Create a new server over two one-way channels and process client commands until the client
     /// disconnects or an error occurs, with config options.
     pub async fn run_with_options(
         shim: B,
-        stream: S,
+        input_stream: S,
+        output_stream: W,
         opts: &IntermediaryOptions,
     ) -> Result<(), B::Error> {
-        let r = packet::PacketReader::new(stream);
-        let w = packet::PacketWriter::new(Cursor::new(Vec::new()));
+        let r = packet_reader::PacketReader::new(input_stream);
+        let w = packet_writer::PacketWriter::new(output_stream);
         let mut mi = AsyncMysqlIntermediary {
             client_capabilities: CapabilityFlags::from_bits_truncate(0),
             process_use_statement_on_query: opts.process_use_statement_on_query,
@@ -305,7 +313,8 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
         // Plugin name
         self.writer.write_all(default_auth_plugin.as_bytes())?;
         self.writer.write_all(&[0x00])?;
-        self.writer_flush().await?;
+        self.writer.end_packet().await?;
+        self.writer.flush_all().await?;
 
         {
             let (mut seq, handshake) = self.reader.next_async().await?.ok_or_else(|| {
@@ -372,12 +381,8 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                 self.writer.write_all(&scramble)?;
                 self.writer.write_all(&[0x00])?;
 
-                self.writer.flush()?;
-                let buf = self.writer.w.get_mut();
-                self.reader.r.write_all(buf.as_slice()).await?;
-                self.reader.r.flush().await?;
-                buf.truncate(0);
-                self.writer.w.set_position(0);
+                self.writer.end_packet().await?;
+                self.writer.flush_all().await?;
 
                 {
                     let (rseq, auth_response_data) =
@@ -414,8 +419,9 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                     ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
                     err_msg.as_bytes(),
                     &mut self.writer,
-                )?;
-                self.writer_flush().await?;
+                )
+                .await?;
+                self.writer.flush_all().await?;
                 return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
             }
 
@@ -430,22 +436,13 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                     &mut self.writer,
                     self.client_capabilities,
                     OkResponse::default(),
-                )?;
+                )
+                .await?;
             }
         }
 
-        self.writer_flush().await?;
+        self.writer.flush_all().await?;
 
-        Ok(())
-    }
-
-    async fn writer_flush(&mut self) -> Result<(), B::Error> {
-        self.writer.flush()?;
-        let buf = self.writer.w.get_mut();
-        self.reader.r.write_all(buf.as_slice()).await?;
-        self.reader.r.flush().await?;
-        buf.truncate(0);
-        self.writer.w.set_position(0);
         Ok(())
     }
 
@@ -478,9 +475,9 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
 
                                 match var {
                                     b"max_allowed_packet" => {
-                                        let mut w = w.start(cols)?;
-                                        w.write_row(iter::once(67108864u32))?;
-                                        w.finish()?;
+                                        let mut w = w.start(cols).await?;
+                                        w.write_row(iter::once(67108864u32)).await?;
+                                        w.finish().await?;
                                     }
                                     _ => {
                                         self.shim
@@ -590,7 +587,8 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                                 &mut self.writer,
                                 self.client_capabilities,
                                 ok_packet,
-                            )?;
+                            )
+                            .await?;
                         }
                         Command::Init(schema) => {
                             let w = InitWriter {
@@ -611,13 +609,14 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                                 &mut self.writer,
                                 self.client_capabilities,
                                 OkResponse::default(),
-                            )?;
+                            )
+                            .await?;
                         }
                         Command::Quit => {
                             break;
                         }
                     }
-                    self.writer_flush().await?;
+                    self.writer.flush_all().await?;
                 }
                 Err(_) => {
                     // if parser err, we need also stay the conn,
@@ -626,8 +625,9 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                         &mut self.writer,
                         self.client_capabilities,
                         OkResponse::default(),
-                    )?;
-                    self.writer_flush().await?;
+                    )
+                    .await?;
+                    self.writer.flush_all().await?;
                 }
             }
         }
