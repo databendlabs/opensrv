@@ -43,7 +43,6 @@ mod params;
 mod resultset;
 mod value;
 mod writers;
-//mod async_writers;
 
 #[cfg(test)]
 mod tests;

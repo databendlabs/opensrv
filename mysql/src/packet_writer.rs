@@ -22,6 +22,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 /// The writer of mysql packet.
 /// - behaves as a sync writer, while build the packet
+///    so that trivial async writes could be avoided
 /// - behaves like a async writer, while writing data to the output stream
 pub struct PacketWriter<W> {
     packet_builder: PacketBuilder,
@@ -68,7 +69,10 @@ impl<W: AsyncWrite + Unpin> PacketWriter<W> {
                 header[3] = builder.seq();
                 builder.increase_seq();
 
-                // write out the header and payload
+                // write out the header and payload.
+                //
+                // depends on the AsyncWrite provided, this may trigger
+                // real system call or not (for example, if AsyncWrite is buffered stream)
                 let written = self
                     .output_stream
                     .write_vectored(&[IoSlice::new(&header), IoSlice::new(chunk)])
@@ -96,8 +100,8 @@ impl<W: AsyncWrite + Unpin> PacketWriter<W> {
     }
 }
 
-// Builder that exports as sync Write, so that
-// trivial scatter async write could be avoided int the `writers`
+// Builder that exports as sync `Write`, so that  trivial scattered async writes
+// could be avoided during constructing the packet, especially the writes in mod [writers]
 struct PacketBuilder {
     buffer: Vec<u8>,
     seq: u8,
@@ -105,8 +109,8 @@ struct PacketBuilder {
 
 impl Write for PacketBuilder {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        // here we take them all, and split them into raw packets later
-        // if the buf is larger than max payload size (16MB)
+        // Here we take them all, and split them into raw packets later in `end_packet` if the size
+        // of buffer is larger than max payload size (16MB)
         self.buffer.extend(buf);
         Ok(buf.len())
     }
