@@ -18,19 +18,20 @@ use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::myc::constants::{CapabilityFlags, StatusFlags};
 use crate::myc::io::WriteMysqlExt;
-use crate::packet::PacketWriter;
+//use crate::packet::PacketWriter;
+use crate::packet_writer::PacketWriter;
 use crate::{Column, ErrorKind, OkResponse};
 
-pub(crate) fn write_eof_packet<W: Write>(
+pub(crate) async fn write_eof_packet<W: AsyncWrite + Unpin>(
     w: &mut PacketWriter<W>,
     s: StatusFlags,
 ) -> io::Result<()> {
     w.write_all(&[0xFE, 0x00, 0x00])?;
     w.write_u16::<LittleEndian>(s.bits())?;
-    w.end_packet()
+    w.end_packet().await
 }
 
-pub(crate) fn write_ok_packet<W: Write>(
+pub(crate) async fn write_ok_packet<W: AsyncWrite + Unpin>(
     w: &mut PacketWriter<W>,
     client_capabilities: CapabilityFlags,
     ok_packet: OkResponse,
@@ -56,21 +57,26 @@ pub(crate) fn write_ok_packet<W: Write>(
     } else {
         w.write_all(ok_packet.info.as_bytes())?;
     }
-    w.end_packet()
+    w.end_packet().await
 }
 
-pub fn write_err<W: Write>(err: ErrorKind, msg: &[u8], w: &mut PacketWriter<W>) -> io::Result<()> {
+pub async fn write_err<W: AsyncWrite + Unpin>(
+    err: ErrorKind,
+    msg: &[u8],
+    w: &mut PacketWriter<W>,
+) -> io::Result<()> {
     w.write_u8(0xFF)?;
     w.write_u16::<LittleEndian>(err as u16)?;
     w.write_u8(b'#')?;
     w.write_all(err.sqlstate())?;
     w.write_all(msg)?;
-    w.end_packet()
+    w.end_packet().await
 }
 
 use std::borrow::Borrow;
+use tokio::io::AsyncWrite;
 
-pub(crate) fn write_prepare_ok<'a, PI, CI, W>(
+pub(crate) async fn write_prepare_ok<'a, PI, CI, W>(
     id: u32,
     params: PI,
     columns: CI,
@@ -82,7 +88,7 @@ where
     CI: IntoIterator<Item = &'a Column>,
     <PI as IntoIterator>::IntoIter: ExactSizeIterator,
     <CI as IntoIterator>::IntoIter: ExactSizeIterator,
-    W: Write,
+    W: AsyncWrite + Unpin,
 {
     let pi = params.into_iter();
     let ci = columns.into_iter();
@@ -94,20 +100,20 @@ where
     w.write_u16::<LittleEndian>(pi.len() as u16)?;
     w.write_u8(0x00)?;
     w.write_u16::<LittleEndian>(0)?; // number of warnings
-    w.end_packet()?;
+    w.end_packet().await?;
 
     if pi.len() > 0 {
-        write_column_definitions_41(pi, w, client_capabilities, false)?;
+        write_column_definitions_41(pi, w, client_capabilities, false).await?;
     }
     if ci.len() > 0 {
-        write_column_definitions_41(ci, w, client_capabilities, false)?;
+        write_column_definitions_41(ci, w, client_capabilities, false).await?;
     }
     Ok(())
 }
 
 /// works for Protocol::ColumnDefinition41 is set
 /// see: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response_text_resultset_column_definition.html
-pub(crate) fn write_column_definitions_41<'a, I, W>(
+pub(crate) async fn write_column_definitions_41<'a, I, W>(
     i: I,
     w: &mut PacketWriter<W>,
     client_capabilities: CapabilityFlags,
@@ -115,7 +121,7 @@ pub(crate) fn write_column_definitions_41<'a, I, W>(
 ) -> io::Result<()>
 where
     I: IntoIterator<Item = &'a Column>,
-    W: Write,
+    W: AsyncWrite + Unpin,
 {
     for c in i {
         let c = c.borrow();
@@ -137,17 +143,17 @@ where
         if is_com_field_list {
             w.write_all(&[0xfb])?;
         }
-        w.end_packet()?;
+        w.end_packet().await?;
     }
 
     if !client_capabilities.contains(CapabilityFlags::CLIENT_DEPRECATE_EOF) {
-        write_eof_packet(w, StatusFlags::empty())
+        write_eof_packet(w, StatusFlags::empty()).await
     } else {
         Ok(())
     }
 }
 
-pub(crate) fn column_definitions<'a, I, W>(
+pub(crate) async fn column_definitions<'a, I, W>(
     i: I,
     w: &mut PacketWriter<W>,
     client_capabilities: CapabilityFlags,
@@ -155,10 +161,10 @@ pub(crate) fn column_definitions<'a, I, W>(
 where
     I: IntoIterator<Item = &'a Column>,
     <I as IntoIterator>::IntoIter: ExactSizeIterator,
-    W: Write,
+    W: AsyncWrite + Unpin,
 {
     let i = i.into_iter();
     w.write_lenenc_int(i.len() as u64)?;
-    w.end_packet()?;
-    write_column_definitions_41(i, w, client_capabilities, false)
+    w.end_packet().await?;
+    write_column_definitions_41(i, w, client_capabilities, false).await
 }

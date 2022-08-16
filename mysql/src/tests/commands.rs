@@ -16,7 +16,7 @@ use std::io::Cursor;
 
 use crate::commands::*;
 use crate::myc::constants::{CapabilityFlags, UTF8_GENERAL_CI};
-use crate::packet::PacketReader;
+use crate::packet_reader::PacketReader;
 
 #[test]
 fn it_parses_handshake() {

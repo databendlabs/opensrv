@@ -13,4 +13,3 @@
 // limitations under the License.
 
 mod r#async;
-mod sync;

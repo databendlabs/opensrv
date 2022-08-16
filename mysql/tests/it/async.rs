@@ -15,16 +15,19 @@
 use std::error::Error;
 use std::future::Future;
 use std::io;
-use std::io::Cursor;
+use std::pin::Pin;
 
 use async_trait::async_trait;
+use futures::FutureExt;
 use mysql_async::prelude::*;
 use mysql_async::Opts;
 use mysql_common as myc;
 use opensrv_mysql::{
     AsyncMysqlIntermediary, AsyncMysqlShim, Column, ErrorKind, OkResponse, ParamParser,
-    QueryResultWriter, StatementMetaWriter,
+    QueryResultWriter, StatementMetaWriter, U24_MAX,
 };
+use tokio::io::BufWriter;
+use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpListener;
 
 struct TestingShim<Q, P, E> {
@@ -36,37 +39,45 @@ struct TestingShim<Q, P, E> {
 }
 
 #[async_trait]
-impl<Q, P, E> AsyncMysqlShim<Cursor<Vec<u8>>> for TestingShim<Q, P, E>
+impl<Q, P, E> AsyncMysqlShim<BufWriter<OwnedWriteHalf>> for TestingShim<Q, P, E>
 where
-    Q: 'static + Send + Sync + FnMut(&str, QueryResultWriter<Cursor<Vec<u8>>>) -> io::Result<()>,
+    for<'s> Q: 'static
+        + Send
+        + Sync
+        + FnMut(
+            &'s str,
+            QueryResultWriter<'s, BufWriter<OwnedWriteHalf>>,
+        )
+            -> Pin<Box<dyn std::future::Future<Output = Result<(), std::io::Error>> + Send + 's>>,
     P: 'static + Send + Sync + FnMut(&str) -> u32,
-    E: 'static
+    for<'s> E: 'static
         + Send
         + Sync
         + FnMut(
             u32,
-            Vec<opensrv_mysql::ParamValue>,
-            QueryResultWriter<Cursor<Vec<u8>>>,
-        ) -> io::Result<()>,
+            Vec<opensrv_mysql::ParamValue<'s>>,
+            QueryResultWriter<'s, BufWriter<OwnedWriteHalf>>,
+        )
+            -> Pin<Box<dyn std::future::Future<Output = Result<(), std::io::Error>> + Send + 's>>,
 {
     type Error = io::Error;
 
     async fn on_prepare<'a>(
         &'a mut self,
         query: &'a str,
-        info: StatementMetaWriter<'a, Cursor<Vec<u8>>>,
+        info: StatementMetaWriter<'a, BufWriter<OwnedWriteHalf>>,
     ) -> Result<(), Self::Error> {
         let id = (self.on_p)(query);
-        info.reply(id, &self.params, &self.columns)
+        info.reply(id, &self.params, &self.columns).await
     }
 
     async fn on_execute<'a>(
         &'a mut self,
         id: u32,
         params: ParamParser<'a>,
-        results: QueryResultWriter<'a, Cursor<Vec<u8>>>,
+        results: QueryResultWriter<'a, BufWriter<OwnedWriteHalf>>,
     ) -> Result<(), Self::Error> {
-        (self.on_e)(id, params.into_iter().collect(), results)
+        (self.on_e)(id, params.into_iter().collect(), results).await
     }
 
     async fn on_close<'a>(&'a mut self, _stmt: u32) {}
@@ -74,30 +85,38 @@ where
     async fn on_query<'a>(
         &'a mut self,
         query: &'a str,
-        results: QueryResultWriter<'a, Cursor<Vec<u8>>>,
+        results: QueryResultWriter<'a, BufWriter<OwnedWriteHalf>>,
     ) -> Result<(), Self::Error> {
         if query.eq_ignore_ascii_case("SELECT @@socket")
             || query.eq_ignore_ascii_case("SELECT @@wait_timeout")
         {
-            results.completed(OkResponse::default())
+            results.completed(OkResponse::default()).await
         } else {
-            (self.on_q)(query, results)
+            (self.on_q)(query, results).await
         }
     }
 }
 
 impl<Q, P, E> TestingShim<Q, P, E>
 where
-    Q: 'static + Send + Sync + FnMut(&str, QueryResultWriter<Cursor<Vec<u8>>>) -> io::Result<()>,
+    for<'s> Q: 'static
+        + Send
+        + Sync
+        + FnMut(
+            &'s str,
+            QueryResultWriter<'s, BufWriter<OwnedWriteHalf>>,
+        )
+            -> Pin<Box<dyn std::future::Future<Output = Result<(), std::io::Error>> + Send + 's>>,
     P: 'static + Send + Sync + FnMut(&str) -> u32,
-    E: 'static
+    for<'s> E: 'static
         + Send
         + Sync
         + FnMut(
             u32,
-            Vec<opensrv_mysql::ParamValue>,
-            QueryResultWriter<Cursor<Vec<u8>>>,
-        ) -> io::Result<()>,
+            Vec<opensrv_mysql::ParamValue<'s>>,
+            QueryResultWriter<'s, BufWriter<OwnedWriteHalf>>,
+        )
+            -> Pin<Box<dyn std::future::Future<Output = Result<(), std::io::Error>> + Send + 's>>,
 {
     fn new(on_q: Q, on_p: P, on_e: E) -> Self {
         TestingShim {
@@ -130,7 +149,9 @@ where
         let listen = tokio::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
 
-            AsyncMysqlIntermediary::run_on(self, socket).await.unwrap();
+            let (r, w) = socket.into_split();
+            let w = BufWriter::with_capacity(100 * 1024, w);
+            AsyncMysqlIntermediary::run_on(self, r, w).await.unwrap();
         });
 
         let conn =
@@ -173,7 +194,7 @@ async fn it_pings() {
 #[tokio::test]
 async fn empty_response() {
     TestingShim::new(
-        |_, w| w.completed(OkResponse::default()),
+        |_, w| w.completed(OkResponse::default()).boxed(),
         |_| unreachable!(),
         |_, _, _| unreachable!(),
     )
@@ -187,14 +208,19 @@ async fn empty_response() {
 
 #[tokio::test]
 async fn no_rows() {
-    let cols = [Column {
-        table: String::new(),
-        column: "a".to_owned(),
-        coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
-        colflags: myc::constants::ColumnFlags::empty(),
-    }];
     TestingShim::new(
-        move |_, w| w.start(&cols[..])?.finish(),
+        move |_, w| {
+            async move {
+                let cols = [Column {
+                    table: String::new(),
+                    column: "a".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
+                    colflags: myc::constants::ColumnFlags::empty(),
+                }];
+                w.start(&cols[..]).await?.finish().await
+            }
+            .boxed()
+        },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
     )
@@ -209,7 +235,7 @@ async fn no_rows() {
 #[tokio::test]
 async fn no_columns() {
     TestingShim::new(
-        move |_, w| w.start(&[])?.finish(),
+        move |_, w| async { w.start(&[]).await?.finish().await }.boxed(),
         |_| unreachable!(),
         |_, _, _| unreachable!(),
     )
@@ -224,7 +250,14 @@ async fn no_columns() {
 #[tokio::test]
 async fn no_columns_but_rows() {
     TestingShim::new(
-        move |_, w| w.start(&[])?.write_col(42).map(|_| ()),
+        move |_, w| {
+            async {
+                let mut row_writer = w.start(&[]).await?;
+                row_writer.write_col(42)?;
+                row_writer.finish().await
+            }
+            .boxed()
+        },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
     )
@@ -241,8 +274,13 @@ async fn really_long_query() {
     let long = "CREATE TABLE `stories` (`id` int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY, `always_null` int, `created_at` datetime, `user_id` int unsigned, `url` varchar(250) DEFAULT '', `title` varchar(150) DEFAULT '' NOT NULL, `description` mediumtext, `short_id` varchar(6) DEFAULT '' NOT NULL, `is_expired` tinyint(1) DEFAULT 0 NOT NULL, `is_moderated` tinyint(1) DEFAULT 0 NOT NULL, `markeddown_description` mediumtext, `story_cache` mediumtext, `merged_story_id` int, `unavailable_at` datetime, `twitter_id` varchar(20), `user_is_author` tinyint(1) DEFAULT 0,  INDEX `index_stories_on_created_at`  (`created_at`), fulltext INDEX `index_stories_on_description`  (`description`),   INDEX `is_idxes`  (`is_expired`, `is_moderated`),  INDEX `index_stories_on_is_expired`  (`is_expired`),  INDEX `index_stories_on_is_moderated`  (`is_moderated`),  INDEX `index_stories_on_merged_story_id`  (`merged_story_id`), UNIQUE INDEX `unique_short_id`  (`short_id`), fulltext INDEX `index_stories_on_story_cache`  (`story_cache`), fulltext INDEX `index_stories_on_title`  (`title`),  INDEX `index_stories_on_twitter_id`  (`twitter_id`),  INDEX `url`  (`url`(191)),  INDEX `index_stories_on_user_id`  (`user_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
     TestingShim::new(
         move |q, w| {
-            assert_eq!(q, long);
-            w.start(&[])?.write_col(42).map(|_| ())
+            async move {
+                assert_eq!(q, long);
+                let mut row_writer = w.start(&[]).await?;
+                row_writer.write_col(42).map(|_| ())?;
+                row_writer.finish().await
+            }
+            .boxed()
         },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
@@ -257,9 +295,13 @@ async fn really_long_query() {
 #[tokio::test]
 async fn error_response() {
     let err = (ErrorKind::ER_NO, "clearly not".to_string());
-    let err_to_move = err.clone();
+    let err_clone = (ErrorKind::ER_NO, "clearly not".to_string());
     TestingShim::new(
-        move |_, w| w.error(err_to_move.0, err_to_move.1.as_bytes()),
+        move |_, w| {
+            let message = err_clone.1.clone();
+            let kind = err_clone.0;
+            async move { w.error(kind, message.as_bytes()).await }.boxed()
+        },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
     )
@@ -290,15 +332,22 @@ async fn error_response() {
 }
 
 #[tokio::test]
+// TODO rename this case, row_writer must be used!
 async fn empty_on_drop() {
-    let cols = [Column {
-        table: String::new(),
-        column: "a".to_owned(),
-        coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
-        colflags: myc::constants::ColumnFlags::empty(),
-    }];
     TestingShim::new(
-        move |_, w| w.start(&cols[..]).map(|_| ()),
+        move |_, w| {
+            async move {
+                let cols = [Column {
+                    table: String::new(),
+                    column: "a".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
+                    colflags: myc::constants::ColumnFlags::empty(),
+                }];
+                let row_writer = w.start(&cols[..]).await?;
+                row_writer.finish().await
+            }
+            .boxed()
+        },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
     )
@@ -314,15 +363,18 @@ async fn empty_on_drop() {
 async fn it_queries_nulls() {
     TestingShim::new(
         |_, w| {
-            let cols = &[Column {
-                table: String::new(),
-                column: "a".to_owned(),
-                coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
-                colflags: myc::constants::ColumnFlags::empty(),
-            }];
-            let mut w = w.start(cols)?;
-            w.write_col(None::<i16>)?;
-            w.finish()
+            async move {
+                let cols = &[Column {
+                    table: String::new(),
+                    column: "a".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
+                    colflags: myc::constants::ColumnFlags::empty(),
+                }];
+                let mut w = w.start(cols).await?;
+                w.write_col(None::<i16>)?;
+                w.finish().await
+            }
+            .boxed()
         },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
@@ -341,15 +393,18 @@ async fn it_queries_nulls() {
 async fn it_queries() {
     TestingShim::new(
         |_, w| {
-            let cols = &[Column {
-                table: String::new(),
-                column: "a".to_owned(),
-                coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
-                colflags: myc::constants::ColumnFlags::empty(),
-            }];
-            let mut w = w.start(cols)?;
-            w.write_col(1024i16)?;
-            w.finish()
+            async move {
+                let cols = &[Column {
+                    table: String::new(),
+                    column: "a".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
+                    colflags: myc::constants::ColumnFlags::empty(),
+                }];
+                let mut w = w.start(cols).await?;
+                w.write_col(1024i16)?;
+                w.finish().await
+            }
+            .boxed()
         },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
@@ -368,26 +423,29 @@ async fn it_queries() {
 async fn it_queries_many_rows() {
     TestingShim::new(
         |_, w| {
-            let cols = &[
-                Column {
-                    table: String::new(),
-                    column: "a".to_owned(),
-                    coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
-                    colflags: myc::constants::ColumnFlags::empty(),
-                },
-                Column {
-                    table: String::new(),
-                    column: "b".to_owned(),
-                    coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
-                    colflags: myc::constants::ColumnFlags::empty(),
-                },
-            ];
-            let mut w = w.start(cols)?;
-            w.write_col(1024i16)?;
-            w.write_col(1025i16)?;
-            w.end_row()?;
-            w.write_row(&[1024i16, 1025i16])?;
-            w.finish()
+            async move {
+                let cols = &[
+                    Column {
+                        table: String::new(),
+                        column: "a".to_owned(),
+                        coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
+                        colflags: myc::constants::ColumnFlags::empty(),
+                    },
+                    Column {
+                        table: String::new(),
+                        column: "b".to_owned(),
+                        coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
+                        colflags: myc::constants::ColumnFlags::empty(),
+                    },
+                ];
+                let mut w = w.start(cols).await?;
+                w.write_col(1024i16)?;
+                w.write_col(1025i16)?;
+                w.end_row().await?;
+                w.write_row(&[1024i16, 1025i16]).await?;
+                w.finish().await
+            }
+            .boxed()
         },
         |_| unreachable!(),
         |_, _, _| unreachable!(),
@@ -429,18 +487,22 @@ async fn it_prepares() {
             41
         },
         move |stmt, params, w| {
-            assert_eq!(stmt, 41);
-            assert_eq!(params.len(), 1);
-            // rust-mysql sends all numbers as LONGLONG
-            assert_eq!(
-                params[0].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_LONGLONG
-            );
-            assert_eq!(Into::<i8>::into(params[0].value), 42i8);
+            let cols3 = cols.clone();
+            async move {
+                assert_eq!(stmt, 41);
+                assert_eq!(params.len(), 1);
+                // rust-mysql sends all numbers as LONGLONG
+                assert_eq!(
+                    params[0].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_LONGLONG
+                );
+                assert_eq!(Into::<i8>::into(params[0].value), 42i8);
 
-            let mut w = w.start(&cols)?;
-            w.write_col(1024i16)?;
-            w.finish()
+                let mut w = w.start(&cols3).await?;
+                w.write_col(1024i16)?;
+                w.finish().await
+            }
+            .boxed()
         },
     )
     .with_params(params)
@@ -508,55 +570,58 @@ async fn insert_exec() {
         |_, _| unreachable!(),
         |_| 1,
         move |_, params, w| {
-            assert_eq!(params.len(), 7);
-            assert_eq!(
-                params[0].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
-            );
-            assert_eq!(
-                params[1].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
-            );
-            assert_eq!(
-                params[2].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
-            );
-            assert_eq!(
-                params[3].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_DATETIME
-            );
-            assert_eq!(
-                params[4].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
-            );
-            assert_eq!(
-                params[5].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
-            );
-            assert_eq!(
-                params[6].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
-            );
-            assert_eq!(Into::<&str>::into(params[0].value), "user199");
-            assert_eq!(Into::<&str>::into(params[1].value), "user199@example.com");
-            assert_eq!(
-                Into::<&str>::into(params[2].value),
-                "$2a$10$Tq3wrGeC0xtgzuxqOlc3v.07VTUvxvwI70kuoVihoO2cE5qj7ooka"
-            );
-            assert_eq!(
-                Into::<chrono::NaiveDateTime>::into(params[3].value),
-                chrono::NaiveDate::from_ymd(2018, 4, 6).and_hms(13, 0, 56)
-            );
-            assert_eq!(Into::<&str>::into(params[4].value), "token199");
-            assert_eq!(Into::<&str>::into(params[5].value), "rsstoken199");
-            assert_eq!(Into::<&str>::into(params[6].value), "mtok199");
+            async move {
+                assert_eq!(params.len(), 7);
+                assert_eq!(
+                    params[0].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
+                );
+                assert_eq!(
+                    params[1].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
+                );
+                assert_eq!(
+                    params[2].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
+                );
+                assert_eq!(
+                    params[3].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_DATETIME
+                );
+                assert_eq!(
+                    params[4].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
+                );
+                assert_eq!(
+                    params[5].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
+                );
+                assert_eq!(
+                    params[6].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
+                );
+                assert_eq!(Into::<&str>::into(params[0].value), "user199");
+                assert_eq!(Into::<&str>::into(params[1].value), "user199@example.com");
+                assert_eq!(
+                    Into::<&str>::into(params[2].value),
+                    "$2a$10$Tq3wrGeC0xtgzuxqOlc3v.07VTUvxvwI70kuoVihoO2cE5qj7ooka"
+                );
+                assert_eq!(
+                    Into::<chrono::NaiveDateTime>::into(params[3].value),
+                    chrono::NaiveDate::from_ymd(2018, 4, 6).and_hms(13, 0, 56)
+                );
+                assert_eq!(Into::<&str>::into(params[4].value), "token199");
+                assert_eq!(Into::<&str>::into(params[5].value), "rsstoken199");
+                assert_eq!(Into::<&str>::into(params[6].value), "mtok199");
 
-            let info = OkResponse {
-                affected_rows: 42,
-                last_insert_id: 1,
-                ..Default::default()
-            };
-            w.completed(info)
+                let info = OkResponse {
+                    affected_rows: 42,
+                    last_insert_id: 1,
+                    ..Default::default()
+                };
+                w.completed(info).await
+            }
+            .boxed()
         },
     )
     .with_params(params)
@@ -615,18 +680,22 @@ async fn send_long() {
             41
         },
         move |stmt, params, w| {
-            assert_eq!(stmt, 41);
-            assert_eq!(params.len(), 1);
-            // rust-mysql sends all strings as VAR_STRING
-            assert_eq!(
-                params[0].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
-            );
-            assert_eq!(Into::<&[u8]>::into(params[0].value), b"Hello world");
+            let cols = cols.clone();
+            async move {
+                assert_eq!(stmt, 41);
+                assert_eq!(params.len(), 1);
+                // rust-mysql sends all strings as VAR_STRING
+                assert_eq!(
+                    params[0].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING
+                );
+                assert_eq!(Into::<&[u8]>::into(params[0].value), b"Hello world");
 
-            let mut w = w.start(&cols)?;
-            w.write_col(1024i16)?;
-            w.finish()
+                let mut w = w.start(&cols).await?;
+                w.write_col(1024i16)?;
+                w.finish().await
+            }
+            .boxed()
         },
     )
     .with_params(params)
@@ -668,15 +737,19 @@ async fn it_prepares_many() {
             41
         },
         move |stmt, params, w| {
-            assert_eq!(stmt, 41);
-            assert_eq!(params.len(), 0);
+            let cols = cols.clone();
+            async move {
+                assert_eq!(stmt, 41);
+                assert_eq!(params.len(), 0);
 
-            let mut w = w.start(&cols)?;
-            w.write_col(1024i16)?;
-            w.write_col(1025i16)?;
-            w.end_row()?;
-            w.write_row(&[1024i16, 1025i16])?;
-            w.finish()
+                let mut w = w.start(&cols).await?;
+                w.write_col(1024i16)?;
+                w.write_col(1025i16)?;
+                w.end_row().await?;
+                w.write_row(&[1024i16, 1025i16]).await?;
+                w.finish().await
+            }
+            .boxed()
         },
     )
     .with_params(Vec::new())
@@ -716,8 +789,11 @@ async fn prepared_empty() {
         |_, _| unreachable!(),
         |_| 0,
         move |_, params, w| {
-            assert!(!params.is_empty());
-            w.completed(OkResponse::default())
+            async move {
+                assert!(!params.is_empty());
+                w.completed(OkResponse::default()).await
+            }
+            .boxed()
         },
     )
     .with_params(params)
@@ -746,10 +822,14 @@ async fn prepared_no_params() {
         |_, _| unreachable!(),
         |_| 0,
         move |_, params, w| {
-            assert!(params.is_empty());
-            let mut w = w.start(&cols)?;
-            w.write_col(1024i16)?;
-            w.finish()
+            let cols = cols.clone();
+            async move {
+                assert!(params.is_empty());
+                let mut w = w.start(&cols).await?;
+                w.write_col(1024i16)?;
+                w.finish().await
+            }
+            .boxed()
         },
     )
     .with_params(params)
@@ -801,23 +881,27 @@ async fn prepared_nulls() {
         |_, _| unreachable!(),
         |_| 0,
         move |_, params, w| {
-            assert_eq!(params.len(), 2);
-            assert!(params[0].value.is_null());
-            assert!(!params[1].value.is_null());
-            assert_eq!(
-                params[0].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_NULL
-            );
-            // rust-mysql sends all numbers as LONGLONG :'(
-            assert_eq!(
-                params[1].coltype,
-                myc::constants::ColumnType::MYSQL_TYPE_LONGLONG
-            );
-            assert_eq!(Into::<i8>::into(params[1].value), 42i8);
+            let cols = cols.clone();
+            async move {
+                assert_eq!(params.len(), 2);
+                assert!(params[0].value.is_null());
+                assert!(!params[1].value.is_null());
+                assert_eq!(
+                    params[0].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_NULL
+                );
+                // rust-mysql sends all numbers as LONGLONG :'(
+                assert_eq!(
+                    params[1].coltype,
+                    myc::constants::ColumnType::MYSQL_TYPE_LONGLONG
+                );
+                assert_eq!(Into::<i8>::into(params[1].value), 42i8);
 
-            let mut w = w.start(&cols)?;
-            w.write_row(vec![None::<i16>, Some(42)])?;
-            w.finish()
+                let mut w = w.start(&cols).await?;
+                w.write_row(vec![None::<i16>, Some(42)]).await?;
+                w.finish().await
+            }
+            .boxed()
         },
     )
     .with_params(params)
@@ -846,7 +930,10 @@ async fn prepared_no_rows() {
     TestingShim::new(
         |_, _| unreachable!(),
         |_| 0,
-        move |_, _, w| w.start(&cols[..])?.finish(),
+        move |_, _, w| {
+            let cols = cols.clone();
+            async move { w.start(&cols[..]).await?.finish().await }.boxed()
+        },
     )
     .with_columns(cols2)
     .test(|mut db| async move {
@@ -863,7 +950,14 @@ async fn prepared_no_cols_but_rows() {
     TestingShim::new(
         |_, _| unreachable!(),
         |_| 0,
-        move |_, _, w| w.start(&[])?.write_col(42).map(|_| ()),
+        move |_, _, w| {
+            async move {
+                let mut row_writer = w.start(&[]).await?;
+                row_writer.write_col(42)?;
+                row_writer.finish().await
+            }
+            .boxed()
+        },
     )
     .test(|mut db| async move {
         let prep = db.prep("SELECT a, b FROM foo").await?;
@@ -879,12 +973,53 @@ async fn prepared_no_cols() {
     TestingShim::new(
         |_, _| unreachable!(),
         |_| 0,
-        move |_, _, w| w.start(&[])?.finish(),
+        move |_, _, w| async move { w.start(&[]).await?.finish().await }.boxed(),
     )
     .test(|mut db| async move {
         let prep = db.prep("SELECT a, b FROM foo").await?;
         let rs: Vec<mysql_async::Row> = db.exec(prep, ()).await?;
         assert_eq!(rs.len(), 0);
+        Ok(())
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn large_packet() {
+    TestingShim::new(
+        move |_, w| {
+            async move {
+                let cols = vec![Column {
+                    table: String::new(),
+                    column: "a".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_BLOB,
+                    colflags: myc::constants::ColumnFlags::empty(),
+                }];
+                let mut row_writer = w.start(&cols).await?;
+                let blob_col = vec![0; U24_MAX + 1];
+                row_writer.write_row(vec![blob_col.clone()]).await?;
+                row_writer.write_row(vec![blob_col]).await?;
+                let row_writer = row_writer.finish_one().await?;
+                row_writer.no_more_results().await
+            }
+            .boxed()
+        },
+        |_| 0,
+        |_, _, _| unreachable!(),
+    )
+    .test(|mut db| async move {
+        let mut result = db.query_iter("SELECT a, b from foo").await?;
+
+        // check row numbers and packet size
+        let mut number_rows = 0;
+        while let Some(mut row) = result.next().await? {
+            number_rows += 1;
+            let value: Vec<u8> = row.take(0).unwrap();
+            assert_eq!(U24_MAX + 1, value.len());
+        }
+        assert_eq!(2, number_rows);
+
+        result.drop_result().await?;
         Ok(())
     })
     .await;

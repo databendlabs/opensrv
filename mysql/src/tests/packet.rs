@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::packet::*;
+use crate::packet_reader::*;
+use crate::U24_MAX;
 
 #[test]
 fn test_one_ping() {

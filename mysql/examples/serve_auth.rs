@@ -24,12 +24,13 @@ use std::iter;
 
 use mysql_common as myc;
 use opensrv_mysql::*;
+use tokio::io::AsyncWrite;
 use tokio::net::TcpListener;
 
 struct Backend;
 
 #[async_trait::async_trait]
-impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
+impl<W: AsyncWrite + Send + Unpin> AsyncMysqlShim<W> for Backend {
     type Error = io::Error;
 
     async fn on_prepare<'a>(
@@ -37,7 +38,7 @@ impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
         _: &'a str,
         info: StatementMetaWriter<'a, W>,
     ) -> io::Result<()> {
-        info.reply(42, &[], &[])
+        info.reply(42, &[], &[]).await
     }
 
     async fn on_execute<'a>(
@@ -47,7 +48,7 @@ impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
         results: QueryResultWriter<'a, W>,
     ) -> io::Result<()> {
         let resp = OkResponse::default();
-        results.completed(resp)
+        results.completed(resp).await
     }
 
     async fn on_close(&mut self, _: u32) {}
@@ -66,11 +67,11 @@ impl<W: io::Write + Send> AsyncMysqlShim<W> for Backend {
             colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
         }];
 
-        let mut w = results.start(cols)?;
-        w.write_row(iter::once(67108864u32))?;
-        w.write_row(iter::once(167108864u32))?;
+        let mut w = results.start(cols).await?;
+        w.write_row(iter::once(67108864u32)).await?;
+        w.write_row(iter::once(167108864u32)).await?;
 
-        w.finish_with_info("ExtraInfo")
+        w.finish_with_info("ExtraInfo").await
     }
 
     /// authenticate method for the specified plugin
@@ -120,7 +121,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let (stream, _) = listener.accept().await?;
-        tokio::spawn(async move { AsyncMysqlIntermediary::run_on(Backend, stream).await });
+        let (r, w) = stream.into_split();
+        tokio::spawn(async move { AsyncMysqlIntermediary::run_on(Backend, r, w).await });
     }
 }
 
