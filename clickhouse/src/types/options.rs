@@ -161,7 +161,7 @@ impl convert::From<Certificate> for native_tls::Certificate {
 }
 
 /// Clickhouse connection options.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Options {
     /// Address of clickhouse server (defaults to `127.0.0.1:9000`).
     pub addr: Url,

@@ -488,7 +488,7 @@ pub fn new_column<K: ColumnType>(
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Either<L, R>
 where
     L: fmt::Debug + PartialEq + Clone,
