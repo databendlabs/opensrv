@@ -370,7 +370,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
                     let value_ref: ValueRef<'a> = From::from(v);
                     ref_vec.push(value_ref)
                 }
-                ValueRef::Array(*t, Arc::new(ref_vec))
+                ValueRef::Array(t, Arc::new(ref_vec))
             }
             Value::Decimal(v) => ValueRef::Decimal(v.clone()),
             Value::Enum8(values, v) => ValueRef::Enum8(values.to_vec(), *v),
