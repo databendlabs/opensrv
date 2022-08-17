@@ -9,6 +9,7 @@ See the full example [here](./examples/simple.rs)
 ```rust
 struct Session {
     last_progress_send: Instant,
+    metadata: ClickHouseMetadata,
 }
 
 #[async_trait::async_trait]
@@ -72,33 +73,8 @@ impl opensrv_clickhouse::ClickHouseSession for Session {
         Ok(())
     }
 
-    fn dbms_name(&self) -> &str {
-        "ClickHouse-X"
-    }
-
-    fn dbms_version_major(&self) -> u64 {
-        2021
-    }
-
-    fn dbms_version_minor(&self) -> u64 {
-        5
-    }
-
-    // the MIN_SERVER_REVISION for suggestions is 54406
-    fn dbms_tcp_protocol_version(&self) -> u64 {
-        54405
-    }
-
-    fn timezone(&self) -> &str {
-        "UTC"
-    }
-
-    fn server_display_name(&self) -> &str {
-        "ClickHouse-X"
-    }
-
-    fn dbms_version_patch(&self) -> u64 {
-        0
+    fn metadata(&self) -> &ClickHouseMetadata {
+        &self.metadata
     }
 
     fn get_progress(&self) -> Progress {
