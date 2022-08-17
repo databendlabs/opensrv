@@ -161,7 +161,10 @@ impl convert::From<Certificate> for native_tls::Certificate {
 }
 
 /// Clickhouse connection options.
-#[derive(Clone, Eq, PartialEq)]
+// the trait `std::cmp::Eq` is not implemented for `types::options::Certificate`
+// so we can't use `derive(Eq)` in tls feature.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq)]
 pub struct Options {
     /// Address of clickhouse server (defaults to `127.0.0.1:9000`).
     pub addr: Url,
