@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use ordered_float::OrderedFloat;
+
 pub trait Marshal {
     fn marshal(&self, scratch: &mut [u8]);
 }
@@ -71,6 +73,30 @@ impl Marshal for i64 {
 }
 
 impl Marshal for f32 {
+    fn marshal(&self, scratch: &mut [u8]) {
+        let bits = self.to_bits();
+        let bytes = bits.to_le_bytes();
+        scratch.copy_from_slice(&bytes);
+    }
+}
+
+impl Marshal for f64 {
+    fn marshal(&self, scratch: &mut [u8]) {
+        let bits = self.to_bits();
+        let bytes = bits.to_le_bytes();
+        scratch.copy_from_slice(&bytes);
+    }
+}
+
+impl Marshal for OrderedFloat<f32> {
+    fn marshal(&self, scratch: &mut [u8]) {
+        let bits = self.to_bits();
+        let bytes = bits.to_le_bytes();
+        scratch.copy_from_slice(&bytes);
+    }
+}
+
+impl Marshal for OrderedFloat<f64> {
     fn marshal(&self, scratch: &mut [u8]) {
         let bits = self.to_bits();
         let bytes = bits.to_le_bytes();

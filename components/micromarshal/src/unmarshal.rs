@@ -86,6 +86,20 @@ impl Unmarshal<f64> for f64 {
     }
 }
 
+impl Unmarshal<OrderedFloat<f32>> for OrderedFloat<f32> {
+    fn unmarshal(scratch: &[u8]) -> Self {
+        let bits = u32::from_le_bytes(scratch.try_into().unwrap());
+        f32::from_bits(bits).into()
+    }
+}
+
+impl Unmarshal<OrderedFloat<f64>> for OrderedFloat<f64> {
+    fn unmarshal(scratch: &[u8]) -> Self {
+        let bits = u64::from_le_bytes(scratch.try_into().unwrap());
+        f64::from_bits(bits).into()
+    }
+}
+
 impl Unmarshal<bool> for bool {
     fn unmarshal(scratch: &[u8]) -> Self {
         scratch[0] != 0

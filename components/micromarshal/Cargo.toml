@@ -15,5 +15,9 @@ keywords = ["marshal", "read", "decode"]
 [lib]
 doctest = false
 
+
+[dependencies]
+ordered-float = "3.1.0"
+
 [dev-dependencies]
 rand = "0.8.5"
