@@ -17,6 +17,8 @@ use std::io;
 use std::io::Error;
 use std::io::Result;
 
+use ordered_float::OrderedFloat;
+
 pub trait Unmarshal<T> {
     fn unmarshal(scratch: &[u8]) -> T;
     fn try_unmarshal(scratch: &[u8]) -> Result<T> {
@@ -83,6 +85,20 @@ impl Unmarshal<f64> for f64 {
     fn unmarshal(scratch: &[u8]) -> Self {
         let bits = u64::from_le_bytes(scratch.try_into().unwrap());
         Self::from_bits(bits)
+    }
+}
+
+impl Unmarshal<OrderedFloat<f32>> for OrderedFloat<f32> {
+    fn unmarshal(scratch: &[u8]) -> Self {
+        let bits = u32::from_le_bytes(scratch.try_into().unwrap());
+        f32::from_bits(bits).into()
+    }
+}
+
+impl Unmarshal<OrderedFloat<f64>> for OrderedFloat<f64> {
+    fn unmarshal(scratch: &[u8]) -> Self {
+        let bits = u64::from_le_bytes(scratch.try_into().unwrap());
+        f64::from_bits(bits).into()
     }
 }
 
