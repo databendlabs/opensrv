@@ -580,8 +580,10 @@ impl ToMysqlValue for myc::value::Value {
             myc::value::Value::Float(f) => f.to_mysql_text(w),
             myc::value::Value::Double(f) => f.to_mysql_text(w),
             myc::value::Value::Date(y, mo, d, h, mi, s, us) => {
-                NaiveDate::from_ymd(i32::from(y), u32::from(mo), u32::from(d))
-                    .and_hms_micro(u32::from(h), u32::from(mi), u32::from(s), us)
+                NaiveDate::from_ymd_opt(i32::from(y), u32::from(mo), u32::from(d))
+                    .unwrap()
+                    .and_hms_micro_opt(u32::from(h), u32::from(mi), u32::from(s), us)
+                    .unwrap()
                     .to_mysql_text(w)
             }
             myc::value::Value::Time(neg, d, h, m, s, us) => {
@@ -645,8 +647,10 @@ impl ToMysqlValue for myc::value::Value {
             myc::value::Value::Float(f) => f.to_mysql_bin(w, c),
             myc::value::Value::Double(f) => f.to_mysql_bin(w, c),
             myc::value::Value::Date(y, mo, d, h, mi, s, us) => {
-                NaiveDate::from_ymd(i32::from(y), u32::from(mo), u32::from(d))
-                    .and_hms_micro(u32::from(h), u32::from(mi), u32::from(s), us)
+                NaiveDate::from_ymd_opt(i32::from(y), u32::from(mo), u32::from(d))
+                    .unwrap()
+                    .and_hms_micro_opt(u32::from(h), u32::from(mi), u32::from(s), us)
+                    .unwrap()
                     .to_mysql_bin(w, c)
             }
             myc::value::Value::Time(neg, d, h, m, s, us) => {

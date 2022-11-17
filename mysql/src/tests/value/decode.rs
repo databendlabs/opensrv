@@ -168,13 +168,16 @@ rt!(
 rt!(
     time,
     chrono::NaiveDate,
-    chrono::Local::today().naive_local(),
+    chrono::Local::now().date_naive(),
     ColumnType::MYSQL_TYPE_DATE
 );
 rt!(
     datetime,
     chrono::NaiveDateTime,
-    chrono::Utc.ymd(1989, 12, 7).and_hms(8, 0, 4).naive_utc(),
+    chrono::Utc
+        .with_ymd_and_hms(1989, 12, 7, 8, 0, 4)
+        .unwrap()
+        .naive_utc(),
     ColumnType::MYSQL_TYPE_DATETIME
 );
 rt!(
