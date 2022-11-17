@@ -104,14 +104,6 @@ impl Marshal for OrderedFloat<f64> {
     }
 }
 
-impl Marshal for f64 {
-    fn marshal(&self, scratch: &mut [u8]) {
-        let bits = self.to_bits();
-        let bytes = bits.to_le_bytes();
-        scratch.copy_from_slice(&bytes);
-    }
-}
-
 impl Marshal for bool {
     fn marshal(&self, scratch: &mut [u8]) {
         scratch[0] = *self as u8;

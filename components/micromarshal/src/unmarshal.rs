@@ -17,6 +17,8 @@ use std::io;
 use std::io::Error;
 use std::io::Result;
 
+use ordered_float::OrderedFloat;
+
 pub trait Unmarshal<T> {
     fn unmarshal(scratch: &[u8]) -> T;
     fn try_unmarshal(scratch: &[u8]) -> Result<T> {
