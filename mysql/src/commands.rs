@@ -23,13 +23,13 @@ pub struct ClientHandshake {
     pub(crate) collation: u16,
     #[allow(dead_code)]
     pub(crate) db: Option<Vec<u8>>,
-    pub(crate) username: Vec<u8>,
+    pub(crate) username: Option<Vec<u8>>,
     pub(crate) auth_response: Vec<u8>,
     pub(crate) auth_plugin: Vec<u8>,
 }
 
 #[allow(clippy::branches_sharing_code)]
-pub fn client_handshake(i: &[u8]) -> nom::IResult<&[u8], ClientHandshake> {
+pub fn client_handshake(i: &[u8], after_tls: bool) -> nom::IResult<&[u8], ClientHandshake> {
     // mysql handshake protocol documentation
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_connection_phase_packets_protocol_handshake_response.html
     let (i, cap) = nom::number::complete::le_u16(i)?;
@@ -47,8 +47,28 @@ pub fn client_handshake(i: &[u8]) -> nom::IResult<&[u8], ClientHandshake> {
 
         let (i, _) = nom::bytes::complete::take(23u8)(i)?;
 
-        let (i, username) = nom::bytes::complete::take_until(&b"\0"[..])(i)?;
-        let (i, _) = nom::bytes::complete::tag(b"\0")(i)?;
+        if !after_tls && capabilities.contains(CapabilityFlags::CLIENT_SSL) {
+            return Ok((
+                i,
+                ClientHandshake {
+                    capabilities,
+                    maxps,
+                    collation: u16::from(collation[0]),
+                    username: None,
+                    db: None,
+                    auth_response: vec![],
+                    auth_plugin: vec![],
+                },
+            ));
+        }
+
+        let (i, username) = if after_tls || !capabilities.contains(CapabilityFlags::CLIENT_SSL) {
+            let (i, user) = nom::bytes::complete::take_until(&b"\0"[..])(i)?;
+            let (i, _) = nom::bytes::complete::tag(b"\0")(i)?;
+            (i, Some(user.to_owned()))
+        } else {
+            (i, None)
+        };
 
         let (i, auth_response) =
             if capabilities.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA) {
@@ -86,7 +106,7 @@ pub fn client_handshake(i: &[u8]) -> nom::IResult<&[u8], ClientHandshake> {
                 capabilities,
                 maxps,
                 collation: u16::from(collation[0]),
-                username: username.to_vec(),
+                username,
                 db: db.map(|c| c.to_vec()),
                 auth_response: auth_response.to_vec(),
                 auth_plugin: auth_plugin.to_vec(),
@@ -119,7 +139,7 @@ pub fn client_handshake(i: &[u8]) -> nom::IResult<&[u8], ClientHandshake> {
                 capabilities,
                 maxps,
                 collation: 0,
-                username: username.to_vec(),
+                username: Some(username.to_vec()),
                 db: db.map(|c| c.to_vec()),
                 auth_response: auth_response.to_vec(),
                 auth_plugin: vec![],
