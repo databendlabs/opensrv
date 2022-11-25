@@ -34,6 +34,7 @@ use crate::types::Enum16;
 use crate::types::Enum8;
 use crate::types::HasSqlType;
 use crate::types::SqlType;
+use crate::types::UNIX_EPOCH_DAY;
 
 pub(crate) type AppDateTime = DateTime<Tz>;
 pub(crate) type AppDate = NaiveDate;
@@ -172,17 +173,15 @@ impl fmt::Display for Value {
                 write!(f, "{}", time.to_rfc2822())
             }
             Value::Date(v) if f.alternate() => {
-                let time = Tz::Zulu
-                    .timestamp_opt(i64::from(*v) * 24 * 3600, 0)
-                    .unwrap();
-                let date = time.date_naive();
+                let date =
+                    NaiveDate::from_num_days_from_ce_opt((*v as i64 + UNIX_EPOCH_DAY) as i32)
+                        .unwrap();
                 fmt::Display::fmt(&date, f)
             }
             Value::Date(v) => {
-                let time = Tz::Zulu
-                    .timestamp_opt(i64::from(*v) * 24 * 3600, 0)
-                    .unwrap();
-                let date = time.date_naive();
+                let date =
+                    NaiveDate::from_num_days_from_ce_opt((*v as i64 + UNIX_EPOCH_DAY) as i32)
+                        .unwrap();
                 fmt::Display::fmt(&date.format("%Y-%m-%d"), f)
             }
             Value::Nullable(v) => match v {
@@ -403,8 +402,9 @@ macro_rules! from_value {
 impl convert::From<Value> for AppDate {
     fn from(v: Value) -> AppDate {
         if let Value::Date(x) = v {
-            let time = Tz::Zulu.timestamp_opt(i64::from(x) * 24 * 3600, 0).unwrap();
-            return time.date_naive();
+            let date =
+                NaiveDate::from_num_days_from_ce_opt((x as i64 + UNIX_EPOCH_DAY) as i32).unwrap();
+            return date;
         }
         let from = SqlType::from(v);
         panic!("Can't convert Value::{} into {}", from, "AppDate")

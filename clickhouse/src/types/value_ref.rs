@@ -36,6 +36,7 @@ use crate::types::Enum16;
 use crate::types::Enum8;
 use crate::types::SqlType;
 use crate::types::Value;
+use crate::types::UNIX_EPOCH_DAY;
 
 #[derive(Clone, Debug)]
 pub enum ValueRef<'a> {
@@ -121,17 +122,15 @@ impl<'a> fmt::Display for ValueRef<'a> {
             ValueRef::Float32(v) => fmt::Display::fmt(v, f),
             ValueRef::Float64(v) => fmt::Display::fmt(v, f),
             ValueRef::Date(v) if f.alternate() => {
-                let time = Tz::Zulu
-                    .timestamp_opt(i64::from(*v) * 24 * 3600, 0)
-                    .unwrap();
-                let date = time.date_naive();
+                let date =
+                    NaiveDate::from_num_days_from_ce_opt((*v as i64 + UNIX_EPOCH_DAY) as i32)
+                        .unwrap();
                 fmt::Display::fmt(&date, f)
             }
             ValueRef::Date(v) => {
-                let time = Tz::Zulu
-                    .timestamp_opt(i64::from(*v) * 24 * 3600, 0)
-                    .unwrap();
-                let date = time.date_naive();
+                let date =
+                    NaiveDate::from_num_days_from_ce_opt((*v as i64 + UNIX_EPOCH_DAY) as i32)
+                        .unwrap();
                 fmt::Display::fmt(&date.format("%Y-%m-%d"), f)
             }
             ValueRef::DateTime(u, tz) if f.alternate() => {
@@ -410,8 +409,9 @@ macro_rules! value_from {
 impl<'a> From<ValueRef<'a>> for AppDate {
     fn from(value: ValueRef<'a>) -> Self {
         if let ValueRef::Date(v) = value {
-            let time = Tz::Zulu.timestamp_opt(i64::from(v) * 24 * 3600, 0).unwrap();
-            return time.date_naive();
+            let date =
+                NaiveDate::from_num_days_from_ce_opt((v as i64 + UNIX_EPOCH_DAY) as i32).unwrap();
+            return date;
         }
         let from = format!("{}", SqlType::from(value.clone()));
         panic!("Can't convert ValueRef::{} into {}.", from, stringify!($t))

@@ -30,6 +30,7 @@ use crate::types::Enum16;
 use crate::types::Enum8;
 use crate::types::SqlType;
 use crate::types::ValueRef;
+use crate::types::UNIX_EPOCH_DAY;
 
 pub type FromSqlResult<T> = Result<T>;
 
@@ -290,8 +291,9 @@ impl<'a> FromSql<'a> for NaiveDate {
     fn from_sql(value: ValueRef<'a>) -> FromSqlResult<Self> {
         match value {
             ValueRef::Date(v) => {
-                let time = Tz::Zulu.timestamp_opt(i64::from(v) * 24 * 3600, 0).unwrap();
-                Ok(time.date_naive())
+                let date = NaiveDate::from_num_days_from_ce_opt((v as i64 + UNIX_EPOCH_DAY) as i32)
+                    .unwrap();
+                Ok(date)
             }
             _ => {
                 let from = SqlType::from(value).to_string();

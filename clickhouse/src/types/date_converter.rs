@@ -20,23 +20,22 @@ use crate::types::SqlType;
 use crate::types::Value;
 use crate::types::ValueRef;
 
+pub const UNIX_EPOCH_DAY: i64 = 719_163;
+
 pub trait DateConverter {
     fn to_date(&self, tz: Tz) -> ValueRef<'static>;
     fn get_stamp(source: Value) -> Self;
     fn date_type() -> SqlType;
 
     fn get_days(date: NaiveDate) -> u16 {
-        const UNIX_EPOCH_DAY: i64 = 719_163;
         let gregorian_day = i64::from(date.num_days_from_ce());
         (gregorian_day - UNIX_EPOCH_DAY) as u16
     }
 }
 
 impl DateConverter for u16 {
-    fn to_date(&self, tz: Tz) -> ValueRef<'static> {
-        let time = tz.timestamp_opt(i64::from(*self) * 24 * 3600, 0).unwrap();
-        let date = time.date_naive();
-        ValueRef::Date(Self::get_days(date))
+    fn to_date(&self, _: Tz) -> ValueRef<'static> {
+        ValueRef::Date(*self)
     }
 
     fn get_stamp(source: Value) -> Self {
