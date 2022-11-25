@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use chrono::prelude::*;
-use chrono::Date;
 use chrono_tz::Tz;
 
 use crate::types::DateTimeType;
@@ -26,7 +25,7 @@ pub trait DateConverter {
     fn get_stamp(source: Value) -> Self;
     fn date_type() -> SqlType;
 
-    fn get_days(date: Date<Tz>) -> u16 {
+    fn get_days(date: NaiveDate) -> u16 {
         const UNIX_EPOCH_DAY: i64 = 719_163;
         let gregorian_day = i64::from(date.num_days_from_ce());
         (gregorian_day - UNIX_EPOCH_DAY) as u16
@@ -35,11 +34,13 @@ pub trait DateConverter {
 
 impl DateConverter for u16 {
     fn to_date(&self, tz: Tz) -> ValueRef<'static> {
-        ValueRef::Date(*self, tz)
+        let time = tz.timestamp_opt(i64::from(*self) * 24 * 3600, 0).unwrap();
+        let date = time.date_naive();
+        ValueRef::Date(Self::get_days(date))
     }
 
     fn get_stamp(source: Value) -> Self {
-        Self::get_days(Date::<Tz>::from(source))
+        Self::get_days(NaiveDate::from(source))
     }
 
     fn date_type() -> SqlType {

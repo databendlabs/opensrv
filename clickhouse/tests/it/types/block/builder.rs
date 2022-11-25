@@ -22,8 +22,11 @@ use opensrv_clickhouse::types::*;
 
 #[test]
 fn test_push_row() {
-    let date_value: Date<Tz> = UTC.ymd(2016, 10, 22);
-    let date_time_value: DateTime<Tz> = UTC.ymd(2014, 7, 8).and_hms(14, 0, 0);
+    let date_value: NaiveDate = UTC
+        .with_ymd_and_hms(2016, 10, 22, 0, 0, 0)
+        .unwrap()
+        .date_naive();
+    let date_time_value: DateTime<Tz> = UTC.with_ymd_and_hms(2014, 7, 8, 14, 0, 0).unwrap();
 
     let decimal = Decimal::of(2.0_f64, 4);
 

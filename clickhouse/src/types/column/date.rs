@@ -17,7 +17,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use chrono::prelude::*;
-use chrono::Date;
+use chrono::NaiveDate;
 use chrono_tz::Tz;
 use micromarshal::Marshal;
 use micromarshal::Unmarshal;
@@ -92,7 +92,7 @@ where
     }
 }
 
-impl ColumnFrom for Vec<Date<Tz>> {
+impl ColumnFrom for Vec<NaiveDate> {
     fn column_from<W: ColumnWrapper>(source: Self) -> W::Wrapper {
         let mut data = List::<u16>::with_capacity(source.len());
         for s in source {
@@ -104,9 +104,9 @@ impl ColumnFrom for Vec<Date<Tz>> {
     }
 }
 
-impl ColumnFrom for Vec<Vec<Date<Tz>>> {
+impl ColumnFrom for Vec<Vec<NaiveDate>> {
     fn column_from<W: ColumnWrapper>(source: Self) -> W::Wrapper {
-        let fake: Vec<Date<Tz>> = Vec::with_capacity(source.len());
+        let fake: Vec<NaiveDate> = Vec::with_capacity(source.len());
         let inner = Vec::column_from::<ArcColumnWrapper>(fake);
         let sql_type = inner.sql_type();
 
@@ -119,7 +119,7 @@ impl ColumnFrom for Vec<Vec<Date<Tz>>> {
             let mut inner = Vec::with_capacity(vs.len());
             for v in vs {
                 let days = u16::get_days(v);
-                let value: Value = Value::Date(days, v.timezone());
+                let value: Value = Value::Date(days);
                 inner.push(value);
             }
             data.push(Value::Array(sql_type.clone().into(), Arc::new(inner)));
@@ -153,9 +153,9 @@ impl ColumnFrom for Vec<Vec<DateTime<Tz>>> {
     }
 }
 
-impl ColumnFrom for Vec<Option<Date<Tz>>> {
+impl ColumnFrom for Vec<Option<NaiveDate>> {
     fn column_from<W: ColumnWrapper>(source: Self) -> <W as ColumnWrapper>::Wrapper {
-        let fake: Vec<Date<Tz>> = Vec::with_capacity(source.len());
+        let fake: Vec<NaiveDate> = Vec::with_capacity(source.len());
         let inner = Vec::column_from::<ArcColumnWrapper>(fake);
 
         let mut data = NullableColumnData {
@@ -168,7 +168,7 @@ impl ColumnFrom for Vec<Option<Date<Tz>>> {
                 None => data.push(Value::Nullable(Either::Left(SqlType::Date.into()))),
                 Some(d) => {
                     let days = u16::get_days(d);
-                    let value = Value::Date(days, d.timezone());
+                    let value = Value::Date(days);
                     data.push(Value::Nullable(Either::Right(Box::new(value))))
                 }
             }

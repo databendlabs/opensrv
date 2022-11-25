@@ -36,7 +36,7 @@ use crate::types::HasSqlType;
 use crate::types::SqlType;
 
 pub(crate) type AppDateTime = DateTime<Tz>;
-pub(crate) type AppDate = Date<Tz>;
+pub(crate) type AppDate = NaiveDate;
 
 /// Client side representation of a value of Clickhouse column.
 #[derive(Clone, Debug)]
@@ -52,7 +52,7 @@ pub enum Value {
     String(Arc<Vec<u8>>),
     Float32(f32),
     Float64(f64),
-    Date(u16, Tz),
+    Date(u16),
     DateTime(u32, Tz),
     DateTime64(i64, (u32, Tz)),
     Ipv4([u8; 4]),
@@ -80,14 +80,10 @@ impl PartialEq for Value {
             (Value::String(a), Value::String(b)) => *a == *b,
             (Value::Float32(a), Value::Float32(b)) => *a == *b,
             (Value::Float64(a), Value::Float64(b)) => *a == *b,
-            (Value::Date(a, tz_a), Value::Date(b, tz_b)) => {
-                let time_a = tz_a.timestamp(i64::from(*a) * 24 * 3600, 0);
-                let time_b = tz_b.timestamp(i64::from(*b) * 24 * 3600, 0);
-                time_a.date() == time_b.date()
-            }
+            (Value::Date(a), Value::Date(b)) => *a == *b,
             (Value::DateTime(a, tz_a), Value::DateTime(b, tz_b)) => {
-                let time_a = tz_a.timestamp(i64::from(*a), 0);
-                let time_b = tz_b.timestamp(i64::from(*b), 0);
+                let time_a = tz_a.timestamp_opt(i64::from(*a), 0).unwrap();
+                let time_b = tz_b.timestamp_opt(i64::from(*b), 0).unwrap();
                 time_a == time_b
             }
             (Value::Nullable(a), Value::Nullable(b)) => *a == *b,
@@ -163,11 +159,11 @@ impl fmt::Display for Value {
             Value::Float32(ref v) => fmt::Display::fmt(v, f),
             Value::Float64(ref v) => fmt::Display::fmt(v, f),
             Value::DateTime(u, tz) if f.alternate() => {
-                let time = tz.timestamp(i64::from(*u), 0);
+                let time = tz.timestamp_opt(i64::from(*u), 0).unwrap();
                 fmt::Display::fmt(&time, f)
             }
             Value::DateTime(u, tz) => {
-                let time = tz.timestamp(i64::from(*u), 0);
+                let time = tz.timestamp_opt(i64::from(*u), 0).unwrap();
                 write!(f, "{}", time.to_rfc2822())
             }
             Value::DateTime64(value, params) => {
@@ -175,14 +171,18 @@ impl fmt::Display for Value {
                 let time = to_datetime(*value, *precision, *tz);
                 write!(f, "{}", time.to_rfc2822())
             }
-            Value::Date(v, tz) if f.alternate() => {
-                let time = tz.timestamp(i64::from(*v) * 24 * 3600, 0);
-                let date = time.date();
+            Value::Date(v) if f.alternate() => {
+                let time = Tz::Zulu
+                    .timestamp_opt(i64::from(*v) * 24 * 3600, 0)
+                    .unwrap();
+                let date = time.date_naive();
                 fmt::Display::fmt(&date, f)
             }
-            Value::Date(v, tz) => {
-                let time = tz.timestamp(i64::from(*v) * 24 * 3600, 0);
-                let date = time.date();
+            Value::Date(v) => {
+                let time = Tz::Zulu
+                    .timestamp_opt(i64::from(*v) * 24 * 3600, 0)
+                    .unwrap();
+                let date = time.date_naive();
                 fmt::Display::fmt(&date.format("%Y-%m-%d"), f)
             }
             Value::Nullable(v) => match v {
@@ -233,7 +233,7 @@ impl convert::From<Value> for SqlType {
             Value::String(_) => SqlType::String,
             Value::Float32(_) => SqlType::Float32,
             Value::Float64(_) => SqlType::Float64,
-            Value::Date(_, _) => SqlType::Date,
+            Value::Date(_) => SqlType::Date,
             Value::DateTime(_, _) => SqlType::DateTime(DateTimeType::DateTime32),
             Value::Nullable(d) => match d {
                 Either::Left(t) => SqlType::Nullable(t),
@@ -294,7 +294,7 @@ macro_rules! value_from {
 
 impl convert::From<AppDate> for Value {
     fn from(v: AppDate) -> Value {
-        Value::Date(u16::get_days(v), v.timezone())
+        Value::Date(u16::get_days(v))
     }
 }
 
@@ -402,9 +402,9 @@ macro_rules! from_value {
 
 impl convert::From<Value> for AppDate {
     fn from(v: Value) -> AppDate {
-        if let Value::Date(x, tz) = v {
-            let time = tz.timestamp(i64::from(x) * 24 * 3600, 0);
-            return time.date();
+        if let Value::Date(x) = v {
+            let time = Tz::Zulu.timestamp_opt(i64::from(x) * 24 * 3600, 0).unwrap();
+            return time.date_naive();
         }
         let from = SqlType::from(v);
         panic!("Can't convert Value::{} into {}", from, "AppDate")
@@ -414,7 +414,7 @@ impl convert::From<Value> for AppDate {
 impl convert::From<Value> for AppDateTime {
     fn from(v: Value) -> AppDateTime {
         match v {
-            Value::DateTime(u, tz) => tz.timestamp(i64::from(u), 0),
+            Value::DateTime(u, tz) => tz.timestamp_opt(i64::from(u), 0).unwrap(),
             Value::DateTime64(u, params) => {
                 let (precision, tz) = params;
                 to_datetime(u, precision, tz)

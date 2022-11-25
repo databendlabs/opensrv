@@ -188,7 +188,7 @@ has_sql_type! {
     String: SqlType::String,
     f32: SqlType::Float32,
     f64: SqlType::Float64,
-    Date<Tz>: SqlType::Date,
+    NaiveDate: SqlType::Date,
     DateTime<Tz>: SqlType::DateTime(DateTimeType::DateTime32)
 }
 

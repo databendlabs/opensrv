@@ -83,14 +83,11 @@ fn test_display() {
         )
     );
 
-    assert_eq!(
-        "1970-01-01".to_string(),
-        format!("{}", ValueRef::Date(0, Tz::Zulu))
-    );
+    assert_eq!("1970-01-01".to_string(), format!("{}", ValueRef::Date(0)));
 
     assert_eq!(
-        "1970-01-01UTC".to_string(),
-        format!("{:#}", ValueRef::Date(0, Tz::Zulu))
+        "1970-01-01".to_string(),
+        format!("{:#}", ValueRef::Date(0))
     );
 
     assert_eq!(
@@ -130,10 +127,7 @@ fn test_value_from_ref() {
     assert_eq!(Value::from(ValueRef::Float32(42.0)), Value::Float32(42.0));
     assert_eq!(Value::from(ValueRef::Float64(42.0)), Value::Float64(42.0));
 
-    assert_eq!(
-        Value::from(ValueRef::Date(42, Tz::Zulu)),
-        Value::Date(42, Tz::Zulu)
-    );
+    assert_eq!(Value::from(ValueRef::Date(42)), Value::Date(42));
     assert_eq!(
         Value::from(ValueRef::DateTime(42, Tz::Zulu)),
         Value::DateTime(42, Tz::Zulu)
@@ -200,7 +194,7 @@ fn test_get_sql_type() {
 
     assert_eq!(SqlType::from(ValueRef::String(&[])), SqlType::String);
 
-    assert_eq!(SqlType::from(ValueRef::Date(42, Tz::Zulu)), SqlType::Date);
+    assert_eq!(SqlType::from(ValueRef::Date(42)), SqlType::Date);
     assert_eq!(
         SqlType::from(ValueRef::DateTime(42, Tz::Zulu)),
         SqlType::DateTime(DateTimeType::DateTime32)
