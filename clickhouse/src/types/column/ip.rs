@@ -59,7 +59,7 @@ impl IpVersion for Ipv4 {
     #[inline(always)]
     fn push(inner: &mut Vec<u8>, value: Value) {
         if let Value::Ipv4(v) = value {
-            inner.extend(&v);
+            inner.extend(v);
         } else {
             panic!();
         }
@@ -87,7 +87,7 @@ impl IpVersion for Ipv6 {
     #[inline(always)]
     fn push(inner: &mut Vec<u8>, value: Value) {
         if let Value::Ipv6(v) = value {
-            inner.extend(&v);
+            inner.extend(v);
         } else {
             panic!();
         }
@@ -115,7 +115,7 @@ impl IpVersion for Uuid {
     #[inline(always)]
     fn push(inner: &mut Vec<u8>, value: Value) {
         if let Value::Uuid(v) = value {
-            inner.extend(&v);
+            inner.extend(v);
         } else {
             panic!();
         }
@@ -135,7 +135,7 @@ impl ColumnFrom for Vec<Ipv4Addr> {
         for ip in data {
             let mut buffer = ip.octets();
             buffer.reverse();
-            inner.extend(&buffer);
+            inner.extend(buffer);
         }
 
         W::wrap(IpColumnData::<Ipv4> {
@@ -149,7 +149,7 @@ impl ColumnFrom for Vec<Ipv6Addr> {
     fn column_from<W: ColumnWrapper>(data: Self) -> W::Wrapper {
         let mut inner = Vec::with_capacity(data.len());
         for ip in data {
-            inner.extend(&ip.octets());
+            inner.extend(ip.octets());
         }
 
         W::wrap(IpColumnData::<Ipv6> {
@@ -166,7 +166,7 @@ impl ColumnFrom for Vec<uuid::Uuid> {
             let mut buffer = *uuid.as_bytes();
             buffer[..8].reverse();
             buffer[8..].reverse();
-            inner.extend(&buffer);
+            inner.extend(buffer);
         }
 
         W::wrap(IpColumnData::<Uuid> {
@@ -185,13 +185,13 @@ impl ColumnFrom for Vec<Option<Ipv4Addr>> {
         for ip in source {
             match ip {
                 None => {
-                    inner.extend(&[0; 4]);
+                    inner.extend([0; 4]);
                     nulls.push(1);
                 }
                 Some(ip) => {
                     let mut buffer = ip.octets();
                     buffer.reverse();
-                    inner.extend(&buffer);
+                    inner.extend(buffer);
                     nulls.push(0);
                 }
             }
@@ -217,11 +217,11 @@ impl ColumnFrom for Vec<Option<Ipv6Addr>> {
         for ip in source {
             match ip {
                 None => {
-                    inner.extend(&[0; 16]);
+                    inner.extend([0; 16]);
                     nulls.push(1);
                 }
                 Some(ip) => {
-                    inner.extend(&ip.octets());
+                    inner.extend(ip.octets());
                     nulls.push(0);
                 }
             }
@@ -247,14 +247,14 @@ impl ColumnFrom for Vec<Option<uuid::Uuid>> {
         for uuid in source {
             match uuid {
                 None => {
-                    inner.extend(&[0; 16]);
+                    inner.extend([0; 16]);
                     nulls.push(1);
                 }
                 Some(uuid) => {
                     let mut buffer = *uuid.as_bytes();
                     buffer[..8].reverse();
                     buffer[8..].reverse();
-                    inner.extend(&buffer);
+                    inner.extend(buffer);
                     nulls.push(0);
                 }
             }

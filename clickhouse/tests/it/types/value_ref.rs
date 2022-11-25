@@ -85,10 +85,7 @@ fn test_display() {
 
     assert_eq!("1970-01-01".to_string(), format!("{}", ValueRef::Date(0)));
 
-    assert_eq!(
-        "1970-01-01".to_string(),
-        format!("{:#}", ValueRef::Date(0))
-    );
+    assert_eq!("1970-01-01".to_string(), format!("{:#}", ValueRef::Date(0)));
 
     assert_eq!(
         "1970-01-01 00:00:00".to_string(),
