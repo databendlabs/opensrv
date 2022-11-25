@@ -87,7 +87,11 @@ fn test_string() {
 
 #[test]
 fn test_time() {
-    test_from_t(&Tz::Africa__Addis_Ababa.ymd(2016, 10, 22).and_hms(12, 0, 0));
+    test_from_t(
+        &Tz::Africa__Addis_Ababa
+            .with_ymd_and_hms(2016, 10, 22, 12, 0, 0)
+            .unwrap(),
+    );
 }
 
 #[test]
@@ -109,16 +113,16 @@ fn test_uuid() {
 
 #[test]
 fn test_from_date() {
-    let date_value: Date<Tz> = UTC.ymd(2016, 10, 22);
-    let date_time_value: DateTime<Tz> = UTC.ymd(2014, 7, 8).and_hms(14, 0, 0);
+    let date_value: NaiveDate = UTC
+        .with_ymd_and_hms(2016, 10, 22, 0, 0, 0)
+        .unwrap()
+        .date_naive();
+    let date_time_value: DateTime<Tz> = UTC.with_ymd_and_hms(2014, 7, 8, 14, 0, 0).unwrap();
 
     let d: Value = Value::from(date_value);
     let dt: Value = date_time_value.into();
 
-    assert_eq!(
-        Value::Date(u16::get_days(date_value), date_value.timezone()),
-        d
-    );
+    assert_eq!(Value::Date(u16::get_days(date_value)), d);
     assert_eq!(
         Value::DateTime(
             date_time_value.timestamp() as u32,
@@ -240,7 +244,7 @@ fn test_from_some() {
         Value::Nullable(Either::Right(Value::Float64(3.1).into()))
     );
     assert_eq!(
-        Value::from(Some(UTC.ymd(2019, 1, 1).and_hms(0, 0, 0))),
+        Value::from(Some(UTC.with_ymd_and_hms(2019, 1, 1, 0, 0, 0).unwrap())),
         Value::Nullable(Either::Right(
             Value::DateTime(1_546_300_800, Tz::UTC).into()
         ))

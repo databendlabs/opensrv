@@ -38,6 +38,7 @@ pub use self::column::Either;
 pub use self::column::Simple;
 pub use self::column::StringPool;
 pub use self::date_converter::DateConverter;
+pub use self::date_converter::UNIX_EPOCH_DAY;
 pub use self::decimal::decimal2str;
 pub use self::decimal::Decimal;
 pub use self::decimal::NoBits;
@@ -188,7 +189,7 @@ has_sql_type! {
     String: SqlType::String,
     f32: SqlType::Float32,
     f64: SqlType::Float64,
-    Date<Tz>: SqlType::Date,
+    NaiveDate: SqlType::Date,
     DateTime<Tz>: SqlType::DateTime(DateTimeType::DateTime32)
 }
 

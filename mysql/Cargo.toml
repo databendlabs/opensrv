@@ -1,6 +1,6 @@
 [package]
 name = "opensrv-mysql"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Databend Authors <opensource@datafuselabs.com>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -16,14 +16,14 @@ doctest = false
 [dependencies]
 async-trait = "0.1.52"
 byteorder = "1.4.3"
-chrono = "0.4.19"
+chrono = "0.4.20"
 mysql_common = { version = "0.29.0", features = ["chrono"] }
 nom = "7.1.0"
 tokio = { version = "1.17.0", features = ["io-util", "io-std"] }
 
 [dev-dependencies]
-mysql = "22.0.0"
-mysql_async = "0.30.0"
+mysql = "23.0.0"
+mysql_async = "0.31.0"
 tokio = { version = "1.0", features = ["full"] }
 futures = "0.3"
 

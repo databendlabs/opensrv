@@ -122,5 +122,5 @@ pub fn to_datetime(value: i64, precision: u32, tz: Tz) -> DateTime<Tz> {
     let sec = nano / 1_000_000_000;
     let nsec = nano - sec * 1_000_000_000;
 
-    tz.timestamp(sec, nsec as u32)
+    tz.timestamp_opt(sec, nsec as u32).unwrap()
 }

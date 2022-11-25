@@ -36,6 +36,7 @@ use crate::types::Enum16;
 use crate::types::Enum8;
 use crate::types::SqlType;
 use crate::types::Value;
+use crate::types::UNIX_EPOCH_DAY;
 
 #[derive(Clone, Debug)]
 pub enum ValueRef<'a> {
@@ -50,7 +51,7 @@ pub enum ValueRef<'a> {
     String(&'a [u8]),
     Float32(f32),
     Float64(f64),
-    Date(u16, Tz),
+    Date(u16),
     DateTime(u32, Tz),
     DateTime64(i64, &'a (u32, Tz)),
     Nullable(Either<&'static SqlType, Box<ValueRef<'a>>>),
@@ -78,14 +79,10 @@ impl<'a> PartialEq for ValueRef<'a> {
             (ValueRef::String(a), ValueRef::String(b)) => *a == *b,
             (ValueRef::Float32(a), ValueRef::Float32(b)) => *a == *b,
             (ValueRef::Float64(a), ValueRef::Float64(b)) => *a == *b,
-            (ValueRef::Date(a, tz_a), ValueRef::Date(b, tz_b)) => {
-                let time_a = tz_a.timestamp(i64::from(*a) * 24 * 3600, 0);
-                let time_b = tz_b.timestamp(i64::from(*b) * 24 * 3600, 0);
-                time_a.date() == time_b.date()
-            }
+            (ValueRef::Date(a), ValueRef::Date(b)) => *a == *b,
             (ValueRef::DateTime(a, tz_a), ValueRef::DateTime(b, tz_b)) => {
-                let time_a = tz_a.timestamp(i64::from(*a), 0);
-                let time_b = tz_b.timestamp(i64::from(*b), 0);
+                let time_a = tz_a.timestamp_opt(i64::from(*a), 0).unwrap();
+                let time_b = tz_b.timestamp_opt(i64::from(*b), 0).unwrap();
                 time_a == time_b
             }
             (ValueRef::Nullable(a), ValueRef::Nullable(b)) => *a == *b,
@@ -124,22 +121,24 @@ impl<'a> fmt::Display for ValueRef<'a> {
             },
             ValueRef::Float32(v) => fmt::Display::fmt(v, f),
             ValueRef::Float64(v) => fmt::Display::fmt(v, f),
-            ValueRef::Date(v, tz) if f.alternate() => {
-                let time = tz.timestamp(i64::from(*v) * 24 * 3600, 0);
-                let date = time.date();
+            ValueRef::Date(v) if f.alternate() => {
+                let date =
+                    NaiveDate::from_num_days_from_ce_opt((*v as i64 + UNIX_EPOCH_DAY) as i32)
+                        .unwrap();
                 fmt::Display::fmt(&date, f)
             }
-            ValueRef::Date(v, tz) => {
-                let time = tz.timestamp(i64::from(*v) * 24 * 3600, 0);
-                let date = time.date();
+            ValueRef::Date(v) => {
+                let date =
+                    NaiveDate::from_num_days_from_ce_opt((*v as i64 + UNIX_EPOCH_DAY) as i32)
+                        .unwrap();
                 fmt::Display::fmt(&date.format("%Y-%m-%d"), f)
             }
             ValueRef::DateTime(u, tz) if f.alternate() => {
-                let time = tz.timestamp(i64::from(*u), 0);
+                let time = tz.timestamp_opt(i64::from(*u), 0).unwrap();
                 write!(f, "{}", time.to_rfc2822())
             }
             ValueRef::DateTime(u, tz) => {
-                let time = tz.timestamp(i64::from(*u), 0);
+                let time = tz.timestamp_opt(i64::from(*u), 0).unwrap();
                 fmt::Display::fmt(&time.format("%Y-%m-%d %H:%M:%S"), f)
             }
             ValueRef::DateTime64(u, params) => {
@@ -195,7 +194,7 @@ impl<'a> convert::From<ValueRef<'a>> for SqlType {
             ValueRef::String(_) => SqlType::String,
             ValueRef::Float32(_) => SqlType::Float32,
             ValueRef::Float64(_) => SqlType::Float64,
-            ValueRef::Date(_, _) => SqlType::Date,
+            ValueRef::Date(_) => SqlType::Date,
             ValueRef::DateTime(_, _) => SqlType::DateTime(DateTimeType::DateTime32),
             ValueRef::Nullable(u) => match u {
                 Either::Left(sql_type) => SqlType::Nullable(sql_type),
@@ -265,7 +264,7 @@ impl<'a> From<ValueRef<'a>> for Value {
             ValueRef::String(v) => Value::String(Arc::new(v.into())),
             ValueRef::Float32(v) => Value::Float32(v),
             ValueRef::Float64(v) => Value::Float64(v),
-            ValueRef::Date(v, tz) => Value::Date(v, tz),
+            ValueRef::Date(v) => Value::Date(v),
             ValueRef::DateTime(v, tz) => Value::DateTime(v, tz),
             ValueRef::Nullable(u) => match u {
                 Either::Left(sql_type) => Value::Nullable(Either::Left((sql_type.clone()).into())),
@@ -354,7 +353,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::String(v) => ValueRef::String(v),
             Value::Float32(v) => ValueRef::Float32(*v),
             Value::Float64(v) => ValueRef::Float64(*v),
-            Value::Date(v, tz) => ValueRef::Date(*v, *tz),
+            Value::Date(v) => ValueRef::Date(*v),
             Value::DateTime(v, tz) => ValueRef::DateTime(*v, *tz),
             Value::DateTime64(v, params) => ValueRef::DateTime64(*v, params),
             Value::Nullable(u) => match u {
@@ -409,9 +408,10 @@ macro_rules! value_from {
 
 impl<'a> From<ValueRef<'a>> for AppDate {
     fn from(value: ValueRef<'a>) -> Self {
-        if let ValueRef::Date(v, tz) = value {
-            let time = tz.timestamp(i64::from(v) * 24 * 3600, 0);
-            return time.date();
+        if let ValueRef::Date(v) = value {
+            let date =
+                NaiveDate::from_num_days_from_ce_opt((v as i64 + UNIX_EPOCH_DAY) as i32).unwrap();
+            return date;
         }
         let from = format!("{}", SqlType::from(value.clone()));
         panic!("Can't convert ValueRef::{} into {}.", from, stringify!($t))
@@ -421,7 +421,7 @@ impl<'a> From<ValueRef<'a>> for AppDate {
 impl<'a> From<ValueRef<'a>> for AppDateTime {
     fn from(value: ValueRef<'a>) -> Self {
         match value {
-            ValueRef::DateTime(x, tz) => tz.timestamp(i64::from(x), 0),
+            ValueRef::DateTime(x, tz) => tz.timestamp_opt(i64::from(x), 0).unwrap(),
             ValueRef::DateTime64(x, params) => {
                 let (precision, tz) = *params;
                 to_datetime(x, precision, tz)

@@ -23,7 +23,7 @@ use std::ptr;
 use std::slice;
 
 use chrono::prelude::*;
-use chrono::Date;
+use chrono::NaiveDate;
 use chrono_tz::Tz;
 
 use crate::errors::Error;
@@ -418,12 +418,15 @@ impl<'a> ExactSizeIterator for UuidIterator<'a> {
 
 impl<'a> DateIterator<'a> {
     #[inline(always)]
-    unsafe fn next_unchecked(&mut self) -> Date<Tz> {
+    unsafe fn next_unchecked(&mut self) -> NaiveDate {
         let current_value = *self.ptr;
         self.ptr = self.ptr.offset(1);
 
-        let time = self.tz.timestamp(i64::from(current_value) * 24 * 3600, 0);
-        time.date()
+        let time = self
+            .tz
+            .timestamp_opt(i64::from(current_value) * 24 * 3600, 0)
+            .unwrap();
+        time.date_naive()
     }
 
     #[inline(always)]
@@ -439,7 +442,7 @@ impl<'a> DateTimeIterator<'a> {
             DateTimeInnerIterator::DateTime32(ptr, _) => {
                 let current_value = **ptr;
                 *ptr = ptr.offset(1);
-                self.tz.timestamp(i64::from(current_value), 0)
+                self.tz.timestamp_opt(i64::from(current_value), 0).unwrap()
             }
             DateTimeInnerIterator::DateTime64(ptr, _, precision) => {
                 let current_value = **ptr;
@@ -474,7 +477,7 @@ impl ExactSizeIterator for DateTimeIterator<'_> {
     }
 }
 
-iterator! { DateIterator: Date<Tz> }
+iterator! { DateIterator: NaiveDate }
 
 impl<'a> Iterator for DateTimeIterator<'a> {
     type Item = DateTime<Tz>;
@@ -803,7 +806,7 @@ impl<'a> Iterable<'a, Simple> for DateTime<Tz> {
     }
 }
 
-impl<'a> Iterable<'a, Simple> for Date<Tz> {
+impl<'a> Iterable<'a, Simple> for NaiveDate {
     type Iter = DateIterator<'a>;
 
     fn iter(column: &'a Column<Simple>, column_type: SqlType) -> Result<Self::Iter> {

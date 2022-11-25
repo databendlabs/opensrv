@@ -221,11 +221,12 @@ impl<'a> From<Value<'a>> for NaiveDate {
     fn from(val: Value<'a>) -> Self {
         if let ValueInner::Date(mut v) = val.0 {
             assert_eq!(v.len(), 4);
-            NaiveDate::from_ymd(
+            NaiveDate::from_ymd_opt(
                 i32::from(v.read_u16::<LittleEndian>().unwrap()),
                 u32::from(v.read_u8().unwrap()),
                 u32::from(v.read_u8().unwrap()),
             )
+            .unwrap()
         } else {
             panic!("invalid type conversion from {:?} to date", val)
         }
@@ -236,11 +237,12 @@ impl<'a> From<Value<'a>> for NaiveDateTime {
     fn from(val: Value<'a>) -> Self {
         if let ValueInner::Datetime(mut v) = val.0 {
             assert!(v.len() == 7 || v.len() == 11);
-            let d = NaiveDate::from_ymd(
+            let d = NaiveDate::from_ymd_opt(
                 i32::from(v.read_u16::<LittleEndian>().unwrap()),
                 u32::from(v.read_u8().unwrap()),
                 u32::from(v.read_u8().unwrap()),
-            );
+            )
+            .unwrap();
 
             let h = u32::from(v.read_u8().unwrap());
             let m = u32::from(v.read_u8().unwrap());
@@ -248,9 +250,9 @@ impl<'a> From<Value<'a>> for NaiveDateTime {
 
             if v.len() == 11 {
                 let us = v.read_u32::<LittleEndian>().unwrap();
-                d.and_hms_micro(h, m, s, us)
+                d.and_hms_micro_opt(h, m, s, us).unwrap()
             } else {
-                d.and_hms(h, m, s)
+                d.and_hms_opt(h, m, s).unwrap()
             }
         } else {
             panic!("invalid type conversion from {:?} to datetime", val)

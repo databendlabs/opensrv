@@ -77,7 +77,7 @@ impl ColumnFrom for Vec<Option<DateTime<Tz>>> {
             match time {
                 None => {
                     nulls.push(1);
-                    values.push(tz.timestamp(0, 0))
+                    values.push(tz.timestamp_opt(0, 0).unwrap())
                 }
                 Some(time) => {
                     nulls.push(0);

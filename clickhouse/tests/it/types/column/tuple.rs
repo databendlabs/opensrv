@@ -23,7 +23,14 @@ use opensrv_clickhouse::types::*;
 fn test_tuple_type() {
     let tz = Tz::Zulu;
     let inner = vec![
-        Vec::column_from::<ArcColumnWrapper>(vec![tz.ymd(2016, 10, 22), tz.ymd(2017, 11, 23)]),
+        Vec::column_from::<ArcColumnWrapper>(vec![
+            tz.with_ymd_and_hms(2016, 10, 22, 0, 0, 0)
+                .unwrap()
+                .date_naive(),
+            tz.with_ymd_and_hms(2017, 11, 23, 0, 0, 0)
+                .unwrap()
+                .date_naive(),
+        ]),
         Vec::column_from::<ArcColumnWrapper>(vec![1_i32, 2]),
         Vec::column_from::<ArcColumnWrapper>(vec!["hello", "data"]),
     ];
@@ -36,7 +43,11 @@ fn test_tuple_type() {
     assert_eq!(2, column.len());
 
     let value = Value::Tuple(Arc::new(vec![
-        Value::Date(u16::get_days(tz.ymd(2018, 12, 24)), tz),
+        Value::Date(u16::get_days(
+            tz.with_ymd_and_hms(2018, 12, 24, 0, 0, 0)
+                .unwrap()
+                .date_naive(),
+        )),
         Value::Int32(3),
         Value::String(Arc::new(b"bend".to_vec())),
     ]));

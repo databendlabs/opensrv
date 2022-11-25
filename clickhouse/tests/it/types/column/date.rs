@@ -20,14 +20,19 @@ use opensrv_clickhouse::types::*;
 #[test]
 fn test_create_date() {
     let tz = Tz::Zulu;
-    let column = Vec::column_from::<ArcColumnWrapper>(vec![tz.ymd(2016, 10, 22)]);
-    assert_eq!("2016-10-22UTC", format!("{:#}", column.at(0)));
+    let column = Vec::column_from::<ArcColumnWrapper>(vec![tz
+        .with_ymd_and_hms(2016, 10, 22, 0, 0, 0)
+        .unwrap()
+        .date_naive()]);
+    assert_eq!("2016-10-22", format!("{:#}", column.at(0)));
     assert_eq!(SqlType::Date, column.sql_type());
 }
 
 #[test]
 fn test_create_date_time() {
     let tz = Tz::Zulu;
-    let column = Vec::column_from::<ArcColumnWrapper>(vec![tz.ymd(2016, 10, 22).and_hms(12, 0, 0)]);
+    let column = Vec::column_from::<ArcColumnWrapper>(vec![tz
+        .with_ymd_and_hms(2016, 10, 22, 12, 0, 0)
+        .unwrap()]);
     assert_eq!(format!("{}", column.at(0)), "2016-10-22 12:00:00");
 }
