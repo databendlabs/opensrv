@@ -69,16 +69,12 @@ mod tls {
     }
 
     fn setup_tls() -> Result<ServerConfig, io::Error> {
-        let cert = certs(&mut BufReader::new(File::open(
-            "mysql/tests/ssl/server.crt",
-        )?))
-        .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid cert"))
-        .map(|mut certs| certs.drain(..).map(Certificate).collect())?;
-        let key = pkcs8_private_keys(&mut BufReader::new(File::open(
-            "mysql/tests/ssl/server.key",
-        )?))
-        .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid key"))
-        .map(|mut keys| keys.drain(..).map(PrivateKey).next().unwrap())?;
+        let cert = certs(&mut BufReader::new(File::open("tests/ssl/server.crt")?))
+            .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid cert"))
+            .map(|mut certs| certs.drain(..).map(Certificate).collect())?;
+        let key = pkcs8_private_keys(&mut BufReader::new(File::open("tests/ssl/server.key")?))
+            .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid key"))
+            .map(|mut keys| keys.drain(..).map(PrivateKey).next().unwrap())?;
 
         let config = ServerConfig::builder()
             .with_safe_defaults()
@@ -89,7 +85,7 @@ mod tls {
         Ok(config)
     }
 
-    pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
         let listener = TcpListener::bind("0.0.0.0:3306").await?;
 
         loop {
@@ -122,10 +118,36 @@ mod tls {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(feature = "tls")]
-    tls::main().await?;
-    println!(" cargo run --example serve_secure --features tls ");
+#[cfg(feature = "tls")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn test_secure() -> Result<(), Box<dyn std::error::Error>> {
+    use std::{
+        process::{Command, Stdio},
+        time::Duration,
+    };
+
+    use std::os::unix::process::ExitStatusExt;
+
+    tokio::spawn(async {
+        let _ = tls::start_server().await;
+    });
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let mut echo_output = Command::new("echo")
+        .arg("\"SELECT * FROM foo\"")
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let echo_output = echo_output.stdout.take().unwrap();
+    let mut mysql_ssl = Command::new("mysql")
+        .args(["-h", "127.0.0.1", "--table", "--ssl-mode=REQUIRED"])
+        .stdin(echo_output)
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let status = mysql_ssl.wait()?;
+    assert_eq!(status.into_raw(), 0);
+
     Ok(())
 }

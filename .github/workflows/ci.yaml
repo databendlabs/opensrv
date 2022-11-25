@@ -69,6 +69,12 @@ jobs:
         with:
           command: build
 
+      - name: Install mysql-client
+        run:  |
+              if [ "$RUNNER_OS" == "macOS" ]; then 
+                brew install mysql-client && export PATH="/usr/local/opt/mysql-client/bin:$PATH"
+              fi
+
       - name: Cargo test
         uses: actions-rs/cargo@v1
         with:

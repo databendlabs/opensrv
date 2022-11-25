@@ -14,7 +14,7 @@ categories = ["api-bindings", "network-programming", "database-implementations"]
 doctest = false
 
 [features]
-default = []
+default = ["tls"]
 tls = ["tokio-rustls", "pin-project-lite"]
 
 [dependencies]
@@ -44,3 +44,8 @@ path = "examples/serve_auth.rs"
 [[example]]
 name = "serve_one"
 path = "examples/serve_one.rs"
+
+[[example]]
+name = "serve_secure"
+path = "examples/serve_secure.rs"
+
