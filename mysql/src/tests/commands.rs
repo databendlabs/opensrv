@@ -33,7 +33,7 @@ fn it_parses_handshake() {
     let r = Cursor::new(&data[..]);
     let mut pr = PacketReader::new(r);
     let (_, p) = pr.next().unwrap().unwrap();
-    let (_, handshake) = client_handshake(&p).unwrap();
+    let (_, handshake) = client_handshake(&p, false).unwrap();
     println!("{:?}", handshake);
     assert!(handshake
         .capabilities
@@ -48,7 +48,7 @@ fn it_parses_handshake() {
         .capabilities
         .contains(CapabilityFlags::CLIENT_DEPRECATE_EOF));
     assert_eq!(handshake.collation, UTF8_GENERAL_CI);
-    assert_eq!(handshake.username, &b"default"[..]);
+    assert_eq!(handshake.username, Some(b"default"[..].to_vec()));
     assert_eq!(handshake.maxps, 16777216);
 }
 

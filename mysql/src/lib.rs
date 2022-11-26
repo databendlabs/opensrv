@@ -32,8 +32,12 @@ use std::iter;
 use async_trait::async_trait;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
+#[cfg(feature = "tls")]
+use tokio_rustls::rustls::ServerConfig;
 
 pub use crate::myc::constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags};
+#[cfg(feature = "tls")]
+pub use crate::tls::{plain_run_with_options, secure_run_with_options};
 
 mod commands;
 mod errorcodes;
@@ -41,6 +45,8 @@ mod packet_reader;
 mod packet_writer;
 mod params;
 mod resultset;
+#[cfg(feature = "tls")]
+mod tls;
 mod value;
 mod writers;
 
@@ -93,6 +99,7 @@ pub use crate::errorcodes::ErrorKind;
 pub use crate::params::{ParamParser, ParamValue, Params};
 pub use crate::resultset::{InitWriter, QueryResultWriter, RowWriter, StatementMetaWriter};
 pub use crate::value::{ToMysqlValue, Value, ValueInner};
+use crate::{commands::ClientHandshake, packet_reader::PacketReader, packet_writer::PacketWriter};
 
 const SCRAMBLE_SIZE: usize = 20;
 const MYSQL_NATIVE_PASSWORD: &str = "mysql_native_password";
@@ -225,104 +232,191 @@ pub struct AsyncMysqlIntermediary<B, S: AsyncRead + Unpin, W> {
     writer: packet_writer::PacketWriter<W>,
 }
 
-impl<B, S, W> AsyncMysqlIntermediary<B, S, W>
+impl<B, R, W> AsyncMysqlIntermediary<B, R, W>
 where
     W: AsyncWrite + Send + Unpin,
     B: AsyncMysqlShim<W> + Send + Sync,
-    S: AsyncRead + Unpin,
+    R: AsyncRead + Send + Unpin,
 {
     /// Create a new server over two one-way channels and process client commands until the client
     /// disconnects or an error occurs.
-    pub async fn run_on(shim: B, stream: S, output_stream: W) -> Result<(), B::Error> {
+    pub async fn run_on(shim: B, stream: R, output_stream: W) -> Result<(), B::Error> {
         Self::run_with_options(shim, stream, output_stream, &Default::default()).await
     }
 
     /// Create a new server over two one-way channels and process client commands until the client
     /// disconnects or an error occurs, with config options.
     pub async fn run_with_options(
-        shim: B,
-        input_stream: S,
-        output_stream: W,
+        mut shim: B,
+        input_stream: R,
+        mut output_stream: W,
         opts: &IntermediaryOptions,
     ) -> Result<(), B::Error> {
-        let r = packet_reader::PacketReader::new(input_stream);
-        let w = packet_writer::PacketWriter::new(output_stream);
+        let process_use_statement_on_query = opts.process_use_statement_on_query;
+        let (_, (handshake, seq, client_capabilities, input_stream)) =
+            AsyncMysqlIntermediary::init_before_ssl(
+                &mut shim,
+                input_stream,
+                &mut output_stream,
+                #[cfg(feature = "tls")]
+                &None,
+            )
+            .await?;
+
+        let reader = PacketReader::new(input_stream);
+        let writer = PacketWriter::new(output_stream);
+
         let mut mi = AsyncMysqlIntermediary {
-            client_capabilities: CapabilityFlags::from_bits_truncate(0),
-            process_use_statement_on_query: opts.process_use_statement_on_query,
+            client_capabilities,
+            process_use_statement_on_query,
             shim,
-            reader: r,
-            writer: w,
+            reader,
+            writer,
         };
-        mi.init().await?;
+        mi.init_after_ssl(handshake, seq).await?;
         mi.run().await
     }
 
-    async fn init(&mut self) -> Result<(), B::Error> {
+    pub async fn init_before_ssl(
+        shim: &mut B,
+        input_stream: R,
+        output_stream: &mut W,
+        #[cfg(feature = "tls")] tls_conf: &Option<std::sync::Arc<ServerConfig>>,
+    ) -> Result<
+        (
+            bool,
+            (ClientHandshake, u8, CapabilityFlags, PacketReader<R>),
+        ),
+        B::Error,
+    > {
+        let mut reader = PacketReader::new(input_stream);
+        let mut writer = PacketWriter::new(output_stream);
         // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
-        self.writer.write_all(&[10])?; // protocol 10
+        writer.write_all(&[10])?; // protocol 10
 
-        self.writer.write_all(self.shim.version().as_bytes())?;
-        self.writer.write_all(&[0x00])?;
+        writer.write_all(shim.version().as_bytes())?;
+        writer.write_all(&[0x00])?;
 
         // connection_id (4 bytes)
-        self.writer
-            .write_all(&self.shim.connect_id().to_le_bytes())?;
+        writer.write_all(&shim.connect_id().to_le_bytes())?;
 
-        let server_capabilities = (
-            CapabilityFlags::CLIENT_PROTOCOL_41
-                | CapabilityFlags::CLIENT_SECURE_CONNECTION
-                | CapabilityFlags::CLIENT_PLUGIN_AUTH
-                | CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
-                | CapabilityFlags::CLIENT_CONNECT_WITH_DB
-                | CapabilityFlags::CLIENT_DEPRECATE_EOF
-            // | CapabilityFlags::CLIENT_SSL
-        )
-            .bits();
+        let server_capabilities = CapabilityFlags::CLIENT_PROTOCOL_41
+            | CapabilityFlags::CLIENT_SECURE_CONNECTION
+            | CapabilityFlags::CLIENT_PLUGIN_AUTH
+            | CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
+            | CapabilityFlags::CLIENT_CONNECT_WITH_DB
+            | CapabilityFlags::CLIENT_DEPRECATE_EOF;
 
-        let server_capabilities = server_capabilities.to_le_bytes();
-        let default_auth_plugin = self.shim.default_auth_plugin();
-        let scramble = self.shim.salt();
+        #[cfg(feature = "tls")]
+        let server_capabilities = if tls_conf.is_some() {
+            server_capabilities | CapabilityFlags::CLIENT_SSL
+        } else {
+            server_capabilities
+        };
 
-        self.writer
-            .write_all(&scramble[0..AUTH_PLUGIN_DATA_PART_1_LENGTH])?; // auth-plugin-data-part-1
-        self.writer.write_all(&[0x00])?;
+        let server_capabilities_vec = server_capabilities.bits().to_le_bytes();
+        let default_auth_plugin = shim.default_auth_plugin();
+        let scramble = shim.salt();
 
-        self.writer.write_all(&server_capabilities[..2])?; // The lower 2 bytes of the Capabilities Flags, 0x42
-                                                           // self.writer.write_all(&[0x00, 0x42])?;
-        self.writer.write_all(&[0x21])?; // UTF8_GENERAL_CI
-        self.writer.write_all(&[0x00, 0x00])?; // status_flags
-        self.writer.write_all(&server_capabilities[2..4])?; // The upper 2 bytes of the Capabilities Flags
+        writer.write_all(&scramble[0..AUTH_PLUGIN_DATA_PART_1_LENGTH])?; // auth-plugin-data-part-1
+        writer.write_all(&[0x00])?;
+
+        writer.write_all(&server_capabilities_vec[..2])?; // The lower 2 bytes of the Capabilities Flags, 0x42
+                                                          // self.writer.write_all(&[0x00, 0x42])?;
+        writer.write_all(&[0x21])?; // UTF8_GENERAL_CI
+        writer.write_all(&[0x00, 0x00])?; // status_flags
+        writer.write_all(&server_capabilities_vec[2..4])?; // The upper 2 bytes of the Capabilities Flags
 
         if default_auth_plugin.is_empty() {
             // no plugins
-            self.writer.write_all(&[0x00])?;
+            writer.write_all(&[0x00])?;
         } else {
-            self.writer
-                .write_all(&((scramble.len() + 1) as u8).to_le_bytes())?; // length of the combined auth_plugin_data(scramble), if auth_plugin_data_len is > 0
+            writer.write_all(&((scramble.len() + 1) as u8).to_le_bytes())?; // length of the combined auth_plugin_data(scramble), if auth_plugin_data_len is > 0
         }
-        self.writer.write_all(&[0x00; 10][..])?; // 10 bytes filler
+        writer.write_all(&[0x00; 10][..])?; // 10 bytes filler
 
         // Part2 of the auth_plugin_data
         // $len=MAX(13, length of auth-plugin-data - 8)
-        self.writer
-            .write_all(&scramble[AUTH_PLUGIN_DATA_PART_1_LENGTH..])?; // 12 bytes
-        self.writer.write_all(&[0x00])?;
+        writer.write_all(&scramble[AUTH_PLUGIN_DATA_PART_1_LENGTH..])?; // 12 bytes
+        writer.write_all(&[0x00])?;
 
         // Plugin name
-        self.writer.write_all(default_auth_plugin.as_bytes())?;
-        self.writer.write_all(&[0x00])?;
-        self.writer.end_packet().await?;
-        self.writer.flush_all().await?;
+        writer.write_all(default_auth_plugin.as_bytes())?;
+        writer.write_all(&[0x00])?;
+        writer.end_packet().await?;
+        writer.flush_all().await?;
 
-        {
-            let (mut seq, handshake) = self.reader.next_async().await?.ok_or_else(|| {
+        let (seq, handshake) = reader.next_async().await?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "peer terminated connection",
+            )
+        })?;
+
+        let handshake = commands::client_handshake(&handshake, false)
+            .map_err(|e| match e {
+                nom::Err::Incomplete(_) => io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "client sent incomplete handshake",
+                ),
+                nom::Err::Failure(nom_error) | nom::Err::Error(nom_error) => {
+                    if let nom::error::ErrorKind::Eof = nom_error.code {
+                        io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            format!(
+                                "client did not complete handshake; got {:?}",
+                                nom_error.input
+                            ),
+                        )
+                    } else {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!(
+                                "bad client handshake; got {:?} ({:?})",
+                                nom_error.input, nom_error.code
+                            ),
+                        )
+                    }
+                }
+            })?
+            .1;
+
+        writer.set_seq(seq + 1);
+
+        #[cfg(not(feature = "tls"))]
+        if handshake.capabilities.contains(CapabilityFlags::CLIENT_SSL) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "client requested SSL despite us not advertising support for it",
+            )
+            .into());
+        }
+
+        #[cfg(feature = "tls")]
+        if handshake.capabilities.contains(CapabilityFlags::CLIENT_SSL) {
+            return Ok((true, (handshake, seq, server_capabilities, reader)));
+        }
+
+        Ok((false, (handshake, seq, server_capabilities, reader)))
+    }
+
+    pub async fn init_after_ssl(
+        &mut self,
+        #[cfg(feature = "tls")] mut handshake: ClientHandshake,
+        #[cfg(not(feature = "tls"))] handshake: ClientHandshake,
+        mut seq: u8,
+    ) -> Result<(), B::Error> {
+        #[cfg(feature = "tls")]
+        if handshake.capabilities.contains(CapabilityFlags::CLIENT_SSL) {
+            let (_seq, hs) = self.reader.next_async().await?.ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::ConnectionAborted,
                     "peer terminated connection",
                 )
             })?;
-            let handshake = commands::client_handshake(&handshake)
+            seq = _seq;
+
+            handshake = commands::client_handshake(&hs, true)
                 .map_err(|e| match e {
                     nom::Err::Incomplete(_) => io::Error::new(
                         io::ErrorKind::UnexpectedEof,
@@ -350,6 +444,11 @@ where
                 })?
                 .1;
 
+            self.writer.set_seq(seq + 1);
+        }
+
+        let scramble = self.shim.salt();
+        {
             if !handshake
                 .capabilities
                 .contains(CapabilityFlags::CLIENT_PROTOCOL_41)
@@ -363,84 +462,83 @@ where
 
             self.client_capabilities = handshake.capabilities;
             let mut auth_response = handshake.auth_response.clone();
-            let auth_plugin_expect = self
-                .shim
-                .auth_plugin_for_username(&handshake.username)
-                .await;
+            if let Some(username) = &handshake.username {
+                let auth_plugin_expect = self.shim.auth_plugin_for_username(username).await;
 
-            // auth switch
-            if !auth_plugin_expect.is_empty()
-                && auth_response.is_empty()
-                && handshake.auth_plugin != auth_plugin_expect.as_bytes()
-            {
-                self.writer.set_seq(seq + 1);
-                self.writer.write_all(&[0xfe])?;
-                self.writer.write_all(auth_plugin_expect.as_bytes())?;
-                self.writer.write_all(&[0x00])?;
-                self.writer.write_all(&scramble)?;
-                self.writer.write_all(&[0x00])?;
-
-                self.writer.end_packet().await?;
-                self.writer.flush_all().await?;
-
+                // auth switch
+                if !auth_plugin_expect.is_empty()
+                    && auth_response.is_empty()
+                    && handshake.auth_plugin != auth_plugin_expect.as_bytes()
                 {
-                    let (rseq, auth_response_data) =
-                        self.reader.next_async().await?.ok_or_else(|| {
-                            io::Error::new(
-                                io::ErrorKind::ConnectionAborted,
-                                "peer terminated connection",
-                            )
-                        })?;
+                    self.writer.set_seq(seq + 1);
+                    self.writer.write_all(&[0xfe])?;
+                    self.writer.write_all(auth_plugin_expect.as_bytes())?;
+                    self.writer.write_all(&[0x00])?;
+                    self.writer.write_all(&scramble)?;
+                    self.writer.write_all(&[0x00])?;
 
-                    seq = rseq;
-                    auth_response = auth_response_data.to_vec();
+                    self.writer.end_packet().await?;
+                    self.writer.flush_all().await?;
+
+                    {
+                        let (rseq, auth_response_data) =
+                            self.reader.next_async().await?.ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::ConnectionAborted,
+                                    "peer terminated connection",
+                                )
+                            })?;
+
+                        seq = rseq;
+                        auth_response = auth_response_data.to_vec();
+                    }
+                }
+
+                self.writer.set_seq(seq + 1);
+
+                if !self
+                    .shim
+                    .authenticate(
+                        auth_plugin_expect,
+                        username,
+                        &scramble,
+                        auth_response.as_slice(),
+                    )
+                    .await
+                {
+                    let err_msg = format!(
+                        "Authenticate failed, user: {:?}, auth_plugin: {:?}",
+                        String::from_utf8_lossy(username),
+                        auth_plugin_expect,
+                    );
+                    writers::write_err(
+                        ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
+                        err_msg.as_bytes(),
+                        &mut self.writer,
+                    )
+                    .await?;
+                    self.writer.flush_all().await?;
+                    return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
+                }
+
+                if let Some(Ok(db)) = handshake.db.as_ref().map(|x| std::str::from_utf8(x)) {
+                    let w = InitWriter {
+                        client_capabilities: self.client_capabilities,
+                        writer: &mut self.writer,
+                    };
+                    self.shim.on_init(db, w).await?;
+                } else {
+                    writers::write_ok_packet(
+                        &mut self.writer,
+                        self.client_capabilities,
+                        OkResponse::default(),
+                    )
+                    .await?;
                 }
             }
 
-            self.writer.set_seq(seq + 1);
-
-            if !self
-                .shim
-                .authenticate(
-                    auth_plugin_expect,
-                    &handshake.username,
-                    &scramble,
-                    auth_response.as_slice(),
-                )
-                .await
-            {
-                let err_msg = format!(
-                    "Authenticate failed, user: {:?}, auth_plugin: {:?}",
-                    String::from_utf8_lossy(&handshake.username),
-                    auth_plugin_expect,
-                );
-                writers::write_err(
-                    ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
-                    err_msg.as_bytes(),
-                    &mut self.writer,
-                )
-                .await?;
-                self.writer.flush_all().await?;
-                return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
-            }
-
-            if let Some(Ok(db)) = handshake.db.as_ref().map(|x| std::str::from_utf8(x)) {
-                let w = InitWriter {
-                    client_capabilities: self.client_capabilities,
-                    writer: &mut self.writer,
-                };
-                self.shim.on_init(db, w).await?;
-            } else {
-                writers::write_ok_packet(
-                    &mut self.writer,
-                    self.client_capabilities,
-                    OkResponse::default(),
-                )
-                .await?;
-            }
-        }
-
-        self.writer.flush_all().await?;
+            self.writer.flush_all().await?;
+        };
 
         Ok(())
     }

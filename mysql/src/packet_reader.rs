@@ -93,6 +93,32 @@ impl<R: Read> PacketReader<R> {
     }
 }
 
+impl<R: AsyncRead + Unpin> AsyncRead for PacketReader<R> {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        if self.remaining != 0 {
+            let bytes = {
+                // NOTE: this is all sorts of unfortunate. what we really want to do is to give
+                // &self.bytes[self.start..] to `packet()`, and the lifetimes should all work
+                // out. however, without NLL, borrowck doesn't realize that self.bytes is no
+                // longer borrowed after the match, and so can be mutated.
+                let bytes = &self.bytes[self.start..];
+                unsafe { ::std::slice::from_raw_parts(bytes.as_ptr(), bytes.len()) }
+            };
+            buf.put_slice(bytes);
+            self.bytes.clear();
+            self.start = 0;
+            self.remaining = 0;
+            std::task::Poll::Ready(Ok(()))
+        } else {
+            std::pin::Pin::new(&mut self.r).poll_read(cx, buf)
+        }
+    }
+}
+
 impl<R: AsyncRead + Unpin> PacketReader<R> {
     pub async fn next_async(&mut self) -> io::Result<Option<(u8, Packet<'_>)>> {
         self.start = self.bytes.len() - self.remaining;
