@@ -16,6 +16,13 @@ You may be looking for:
 - [ClickHouse Examples](./clickhouse/examples)
 - [MySQL/MariaDB Examples](./mysql/examples)
 
+
+## Projects
+
+- [Databend](https://github.com/datafuselabs/databend/): A powerful cloud data warehouse. Built for elasticity and efficiency. Free and open. Also available in the cloud: <https://app.databend.com>
+- [GreptimeDB](https://github.com/GreptimeTeam/greptimedb): An open-source, cloud-native, distributed time-series database.
+- [CeresDB](https://github.com/CeresDB/ceresdb): A high-performance, distributed, cloud native time-series database that can handle both time-series and analytics workloads.
+
 ## Contributing
 
 Check out the [CONTRIBUTING.md](./CONTRIBUTING.md) guide for more details on getting started with contributing to this project.
