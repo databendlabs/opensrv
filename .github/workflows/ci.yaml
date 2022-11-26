@@ -72,7 +72,7 @@ jobs:
       - name: Install mysql-client
         run:  |
               if [ "$RUNNER_OS" == "macOS" ]; then 
-                brew install mysql-client && export PATH="/usr/local/opt/mysql-client/bin:$PATH"
+                brew install mysql
               fi
 
       - name: Cargo test
