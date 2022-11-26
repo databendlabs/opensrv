@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0](https://github.com/datafuselabs/opensrv/releases/tag/v0.3.0) - 2022-11-26
+
+<small>[Compare with v0.2.0](https://github.com/datafuselabs/opensrv/compare/v0.2.0...v0.3.0)</small>
+
+### Features
+- Add tls support for opensrv-mysql (#34) ([3a984ec](https://github.com/datafuselabs/opensrv/commit/3a984ec1b4046d9b2b8da58abfe5d8921715ddeb) by SSebo).
+- Bump main deps (#33) ([1b3e11d](https://github.com/datafuselabs/opensrv/commit/1b3e11d73bd5f0fcad1401df1620b3bbb5b7a0f6) by Chojan Shang).
+- Bump version to 0.2.1 ([0f488d0](https://github.com/datafuselabs/opensrv/commit/0f488d0041f4979f88ace93b3ce41b72713f93f0) by sundyli).
+- Remove unused clippy ([161b5a9](https://github.com/datafuselabs/opensrv/commit/161b5a97e435aefecd2877c894e20e422aa39de9) by sundyli).
+- Add orderfloat ([c875ddd](https://github.com/datafuselabs/opensrv/commit/c875ddd29051c3a62462a96caba3eb9792335149) by sundyli).
+
+
 ## [v0.2.0](https://github.com/datafuselabs/opensrv/releases/tag/v0.2.0) - 2022-08-17
 
 <small>[Compare with v0.1.0](https://github.com/datafuselabs/opensrv/compare/v0.1.0...v0.2.0)</small>
