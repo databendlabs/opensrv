@@ -145,6 +145,7 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
                     }
                     Err(nom::Err::Incomplete(_)) | Err(nom::Err::Error(_)) => {}
                     Err(nom::Err::Failure(ctx)) => {
+                        self.bytes.truncate(self.remaining);
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             format!("{:?}", ctx),
@@ -171,6 +172,7 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
             buffer_size = PACKET_LARGE_BUFFER_SIZE;
 
             if read == 0 {
+                self.bytes.truncate(self.remaining);
                 if self.bytes.is_empty() {
                     return Ok(None);
                 } else {
