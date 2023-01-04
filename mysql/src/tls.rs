@@ -44,9 +44,11 @@ where
     let writer = PacketWriter::new(writer);
 
     let process_use_statement_on_query = opts.process_use_statement_on_query;
+    let reject_connection_on_dbname_absence = opts.reject_connection_on_dbname_absence;
     let mut mi = AsyncMysqlIntermediary {
         client_capabilities,
         process_use_statement_on_query,
+        reject_connection_on_dbname_absence,
         shim,
         reader,
         writer,
@@ -73,9 +75,11 @@ where
     let writer = PacketWriter::new(writer);
 
     let process_use_statement_on_query = opts.process_use_statement_on_query;
+    let reject_connection_on_dbname_absence = opts.reject_connection_on_dbname_absence;
     let mut mi = AsyncMysqlIntermediary {
         client_capabilities,
         process_use_statement_on_query,
+        reject_connection_on_dbname_absence,
         shim,
         reader,
         writer,

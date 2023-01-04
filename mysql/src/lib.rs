@@ -211,6 +211,8 @@ pub trait AsyncMysqlShim<W: Send> {
 pub struct IntermediaryOptions {
     /// process use statement on the on_query handler
     pub process_use_statement_on_query: bool,
+    /// reject connection if dbname not provided
+    pub reject_connection_on_dbname_absence: bool,
 }
 
 #[derive(Default)]
@@ -227,6 +229,7 @@ const AUTH_PLUGIN_DATA_PART_1_LENGTH: usize = 8;
 pub struct AsyncMysqlIntermediary<B, S: AsyncRead + Unpin, W> {
     pub(crate) client_capabilities: CapabilityFlags,
     process_use_statement_on_query: bool,
+    reject_connection_on_dbname_absence: bool,
     shim: B,
     reader: packet_reader::PacketReader<S>,
     writer: packet_writer::PacketWriter<W>,
@@ -253,6 +256,7 @@ where
         opts: &IntermediaryOptions,
     ) -> Result<(), B::Error> {
         let process_use_statement_on_query = opts.process_use_statement_on_query;
+        let reject_connection_on_dbname_absence = opts.reject_connection_on_dbname_absence;
         let (_, (handshake, seq, client_capabilities, input_stream)) =
             AsyncMysqlIntermediary::init_before_ssl(
                 &mut shim,
@@ -269,6 +273,7 @@ where
         let mut mi = AsyncMysqlIntermediary {
             client_capabilities,
             process_use_statement_on_query,
+            reject_connection_on_dbname_absence,
             shim,
             reader,
             writer,
@@ -528,12 +533,21 @@ where
                     };
                     self.shim.on_init(db, w).await?;
                 } else {
-                    writers::write_ok_packet(
-                        &mut self.writer,
-                        self.client_capabilities,
-                        OkResponse::default(),
-                    )
-                    .await?;
+                    if self.reject_connection_on_dbname_absence {
+                        writers::write_err(
+                            ErrorKind::ER_DATABASE_NAME,
+                            "database required on connection".as_bytes(),
+                            &mut self.writer,
+                        )
+                        .await?;
+                    } else {
+                        writers::write_ok_packet(
+                            &mut self.writer,
+                            self.client_capabilities,
+                            OkResponse::default(),
+                        )
+                        .await?;
+                    }
                 }
             }
 
