@@ -532,22 +532,20 @@ where
                         writer: &mut self.writer,
                     };
                     self.shim.on_init(db, w).await?;
+                } else if self.reject_connection_on_dbname_absence {
+                    writers::write_err(
+                        ErrorKind::ER_DATABASE_NAME,
+                        "database required on connection".as_bytes(),
+                        &mut self.writer,
+                    )
+                    .await?;
                 } else {
-                    if self.reject_connection_on_dbname_absence {
-                        writers::write_err(
-                            ErrorKind::ER_DATABASE_NAME,
-                            "database required on connection".as_bytes(),
-                            &mut self.writer,
-                        )
-                        .await?;
-                    } else {
-                        writers::write_ok_packet(
-                            &mut self.writer,
-                            self.client_capabilities,
-                            OkResponse::default(),
-                        )
-                        .await?;
-                    }
+                    writers::write_ok_packet(
+                        &mut self.writer,
+                        self.client_capabilities,
+                        OkResponse::default(),
+                    )
+                    .await?;
                 }
             }
 
