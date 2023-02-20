@@ -140,7 +140,9 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
                 match packet(bytes) {
                     Ok((rest, p)) => {
                         self.remaining = rest.len();
-                        self.bytes.truncate(self.remaining);
+                        if self.remaining > 0 {
+                            self.bytes = self.bytes.split_off(self.bytes.len() - self.remaining);
+                        }
                         return Ok(Some(p));
                     }
                     Err(nom::Err::Incomplete(_)) | Err(nom::Err::Error(_)) => {}
