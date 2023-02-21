@@ -142,6 +142,7 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
                         self.remaining = rest.len();
                         if self.remaining > 0 {
                             self.bytes = self.bytes.split_off(self.bytes.len() - self.remaining);
+                            self.start = 0;
                         }
                         return Ok(Some(p));
                     }
