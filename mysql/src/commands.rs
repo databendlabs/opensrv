@@ -40,7 +40,7 @@ pub fn client_handshake(i: &[u8], after_tls: bool) -> nom::IResult<&[u8], Client
         let (i, cap2) = nom::number::complete::le_u16(i)?;
         let cap = (cap2 as u32) << 16 | cap as u32;
 
-        capabilities = CapabilityFlags::from_bits_truncate(cap as u32);
+        capabilities = CapabilityFlags::from_bits_truncate(cap);
 
         let (i, maxps) = nom::number::complete::le_u32(i)?;
         let (i, collation) = nom::bytes::complete::take(1u8)(i)?;
