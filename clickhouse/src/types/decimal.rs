@@ -200,7 +200,7 @@ impl Decimal {
         }
 
         let underlying = source.scale(FACTORS10[scale as usize]);
-        if underlying > FACTORS10[precision as usize] as i64 {
+        if underlying > FACTORS10[precision as usize] {
             panic!("{} > {}", underlying, FACTORS10[precision as usize]);
         }
 
