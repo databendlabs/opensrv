@@ -298,8 +298,25 @@ where
         let mut writer = PacketWriter::new(output_stream);
         // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
         let default_auth_plugin = shim.default_auth_plugin();
-        let packet_len =  1 + shim.version().as_bytes().len() + 1 + 4 + 8 + 1 + 2 + 1 + 2 + 2 + 1
-            + 6 + 4 + 12 + 1 + default_auth_plugin.len() + 1;
+        let packet_len = 1
+            + shim.version().as_bytes().len()
+            + 1
+            + 4
+            + 8
+            + 1
+            + 2
+            + 1
+            + 2
+            + 2
+            + 1
+            + 6
+            + 4
+            + 12
+            + 1
+            + default_auth_plugin.len()
+            + 1;
+
+
         let mut init_packet = Vec::with_capacity(packet_len);
         init_packet.extend_from_slice(&[10]); // protocol 10
 
@@ -328,9 +345,7 @@ where
 
         init_packet.extend_from_slice(&scramble[0..AUTH_PLUGIN_DATA_PART_1_LENGTH]); // auth-plugin-data-part-1
         init_packet.extend_from_slice(&[0x00]);
-
         init_packet.extend_from_slice(&server_capabilities_vec[..2]); // The lower 2 bytes of the Capabilities Flags, 0x42
-                                                          // self.writer.write_all(&[0x00, 0x42])?;
         init_packet.extend_from_slice(&[0x21]); // UTF8_GENERAL_CI
         init_packet.extend_from_slice(&[0x00, 0x00]); // status_flags
         init_packet.extend_from_slice(&server_capabilities_vec[2..4]); // The upper 2 bytes of the Capabilities Flags
@@ -339,7 +354,8 @@ where
             // no plugins
             init_packet.extend_from_slice(&[0x00]);
         } else {
-            init_packet.extend_from_slice(&((scramble.len() + 1) as u8).to_le_bytes()); // length of the combined auth_plugin_data(scramble), if auth_plugin_data_len is > 0
+            // length of the combined auth_plugin_data(scramble), if auth_plugin_data_len is > 0
+            init_packet.extend_from_slice(&((scramble.len() + 1) as u8).to_le_bytes());
         }
         init_packet.extend_from_slice(&[0x00; 10][..]); // 10 bytes filler
 
