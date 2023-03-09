@@ -297,13 +297,16 @@ where
         let mut reader = PacketReader::new(input_stream);
         let mut writer = PacketWriter::new(output_stream);
         // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
-        writer.write_all(&[10])?; // protocol 10
+        let default_auth_plugin = shim.default_auth_plugin();
+        let packet_len = 46 + shim.version().as_bytes().len() + default_auth_plugin.len();
+        let mut init_packet = Vec::with_capacity(packet_len);
+        init_packet.extend_from_slice(&[10]); // protocol 10
 
-        writer.write_all(shim.version().as_bytes())?;
-        writer.write_all(&[0x00])?;
+        init_packet.extend_from_slice(shim.version().as_bytes());
+        init_packet.extend_from_slice(&[0x00]);
 
         // connection_id (4 bytes)
-        writer.write_all(&shim.connect_id().to_le_bytes())?;
+        init_packet.extend_from_slice(&shim.connect_id().to_le_bytes());
 
         let server_capabilities = CapabilityFlags::CLIENT_PROTOCOL_41
             | CapabilityFlags::CLIENT_SECURE_CONNECTION
@@ -320,34 +323,33 @@ where
         };
 
         let server_capabilities_vec = server_capabilities.bits().to_le_bytes();
-        let default_auth_plugin = shim.default_auth_plugin();
         let scramble = shim.salt();
 
-        writer.write_all(&scramble[0..AUTH_PLUGIN_DATA_PART_1_LENGTH])?; // auth-plugin-data-part-1
-        writer.write_all(&[0x00])?;
-
-        writer.write_all(&server_capabilities_vec[..2])?; // The lower 2 bytes of the Capabilities Flags, 0x42
-                                                          // self.writer.write_all(&[0x00, 0x42])?;
-        writer.write_all(&[0x21])?; // UTF8_GENERAL_CI
-        writer.write_all(&[0x00, 0x00])?; // status_flags
-        writer.write_all(&server_capabilities_vec[2..4])?; // The upper 2 bytes of the Capabilities Flags
+        init_packet.extend_from_slice(&scramble[0..AUTH_PLUGIN_DATA_PART_1_LENGTH]); // auth-plugin-data-part-1
+        init_packet.extend_from_slice(&[0x00]);
+        init_packet.extend_from_slice(&server_capabilities_vec[..2]); // The lower 2 bytes of the Capabilities Flags, 0x42
+        init_packet.extend_from_slice(&[0x21]); // UTF8_GENERAL_CI
+        init_packet.extend_from_slice(&[0x00, 0x00]); // status_flags
+        init_packet.extend_from_slice(&server_capabilities_vec[2..4]); // The upper 2 bytes of the Capabilities Flags
 
         if default_auth_plugin.is_empty() {
             // no plugins
-            writer.write_all(&[0x00])?;
+            init_packet.extend_from_slice(&[0x00]);
         } else {
-            writer.write_all(&((scramble.len() + 1) as u8).to_le_bytes())?; // length of the combined auth_plugin_data(scramble), if auth_plugin_data_len is > 0
+            // length of the combined auth_plugin_data(scramble), if auth_plugin_data_len is > 0
+            init_packet.extend_from_slice(&((scramble.len() + 1) as u8).to_le_bytes());
         }
-        writer.write_all(&[0x00; 10][..])?; // 10 bytes filler
+        init_packet.extend_from_slice(&[0x00; 10][..]); // 10 bytes filler
 
         // Part2 of the auth_plugin_data
         // $len=MAX(13, length of auth-plugin-data - 8)
-        writer.write_all(&scramble[AUTH_PLUGIN_DATA_PART_1_LENGTH..])?; // 12 bytes
-        writer.write_all(&[0x00])?;
+        init_packet.extend_from_slice(&scramble[AUTH_PLUGIN_DATA_PART_1_LENGTH..]); // 12 bytes
+        init_packet.extend_from_slice(&[0x00]);
 
         // Plugin name
-        writer.write_all(default_auth_plugin.as_bytes())?;
-        writer.write_all(&[0x00])?;
+        init_packet.extend_from_slice(default_auth_plugin.as_bytes());
+        init_packet.extend_from_slice(&[0x00]);
+        writer.write_all(&init_packet)?;
         writer.end_packet().await?;
         writer.flush_all().await?;
 
