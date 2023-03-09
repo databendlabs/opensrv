@@ -85,9 +85,9 @@ impl<W: AsyncWrite + Send + Unpin> AsyncMysqlShim<W> for Backend {
         username == "default".as_bytes()
     }
 
-    fn version(&self) -> &str {
+    fn version(&self) -> String {
         // 5.1.10 because that's what Ruby's ActiveRecord requires
-        "5.1.10-alpha-msql-proxy"
+        "5.1.10-alpha-msql-proxy".to_string()
     }
 
     fn connect_id(&self) -> u32 {

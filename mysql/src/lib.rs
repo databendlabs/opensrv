@@ -113,9 +113,9 @@ pub trait AsyncMysqlShim<W: Send> {
     type Error: From<io::Error>;
 
     /// Server version
-    fn version(&self) -> &str {
+    fn version(&self) -> String {
         // 5.1.10 because that's what Ruby's ActiveRecord requires
-        "5.1.10-alpha-msql-proxy"
+        "5.1.10-alpha-msql-proxy".to_string()
     }
 
     /// Connection id
