@@ -298,25 +298,7 @@ where
         let mut writer = PacketWriter::new(output_stream);
         // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
         let default_auth_plugin = shim.default_auth_plugin();
-        let packet_len = 1
-            + shim.version().as_bytes().len()
-            + 1
-            + 4
-            + 8
-            + 1
-            + 2
-            + 1
-            + 2
-            + 2
-            + 1
-            + 6
-            + 4
-            + 12
-            + 1
-            + default_auth_plugin.len()
-            + 1;
-
-
+        let packet_len = 46 + shim.version().as_bytes().len() + default_auth_plugin.len();
         let mut init_packet = Vec::with_capacity(packet_len);
         init_packet.extend_from_slice(&[10]); // protocol 10
 
