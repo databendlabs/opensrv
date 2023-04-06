@@ -14,6 +14,8 @@
 
 use std::fmt::Debug;
 
+use ethnum::{I256, U256};
+
 pub trait StatBuffer {
     type Buffer: AsMut<[u8]> + AsRef<[u8]> + Copy + Sync + Debug;
     fn buffer() -> Self::Buffer;
@@ -51,6 +53,22 @@ impl StatBuffer for u64 {
     }
 }
 
+impl StatBuffer for u128 {
+    type Buffer = [u8; 16];
+
+    fn buffer() -> Self::Buffer {
+        [0; 16]
+    }
+}
+
+impl StatBuffer for U256 {
+    type Buffer = [u8; 32];
+
+    fn buffer() -> Self::Buffer {
+        [0; 32]
+    }
+}
+
 impl StatBuffer for i8 {
     type Buffer = [u8; 1];
 
@@ -80,6 +98,22 @@ impl StatBuffer for i64 {
 
     fn buffer() -> Self::Buffer {
         [0; 8]
+    }
+}
+
+impl StatBuffer for i128 {
+    type Buffer = [u8; 16];
+
+    fn buffer() -> Self::Buffer {
+        [0; 16]
+    }
+}
+
+impl StatBuffer for I256 {
+    type Buffer = [u8; 32];
+
+    fn buffer() -> Self::Buffer {
+        [0; 32]
     }
 }
 
