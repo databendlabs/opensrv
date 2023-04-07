@@ -17,6 +17,8 @@ use std::io;
 use std::io::Error;
 use std::io::Result;
 
+use ethnum::I256;
+use ethnum::U256;
 use ordered_float::OrderedFloat;
 
 pub trait Unmarshal<T> {
@@ -50,6 +52,18 @@ impl Unmarshal<u64> for u64 {
     }
 }
 
+impl Unmarshal<u128> for u128 {
+    fn unmarshal(scratch: &[u8]) -> Self {
+        u128::from_le_bytes(scratch.try_into().unwrap())
+    }
+}
+
+impl Unmarshal<U256> for U256 {
+    fn unmarshal(scratch: &[u8]) -> Self {
+        U256::from_le_bytes(scratch.try_into().unwrap())
+    }
+}
+
 impl Unmarshal<i8> for i8 {
     fn unmarshal(scratch: &[u8]) -> Self {
         i8::from_le_bytes(scratch.try_into().unwrap())
@@ -71,6 +85,18 @@ impl Unmarshal<i32> for i32 {
 impl Unmarshal<i64> for i64 {
     fn unmarshal(scratch: &[u8]) -> Self {
         i64::from_le_bytes(scratch.try_into().unwrap())
+    }
+}
+
+impl Unmarshal<i128> for i128 {
+    fn unmarshal(scratch: &[u8]) -> Self {
+        i128::from_le_bytes(scratch.try_into().unwrap())
+    }
+}
+
+impl Unmarshal<I256> for I256 {
+    fn unmarshal(scratch: &[u8]) -> Self {
+        I256::from_le_bytes(scratch.try_into().unwrap())
     }
 }
 

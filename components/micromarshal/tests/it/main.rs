@@ -14,6 +14,8 @@
 
 use std::fmt;
 
+use ethnum::I256;
+use ethnum::U256;
 use micromarshal::*;
 use rand::distributions::Distribution;
 use rand::distributions::Standard;
@@ -23,6 +25,22 @@ mod statbuffer;
 
 use statbuffer::StatBuffer;
 
+trait Random {
+    fn random() -> Self;
+}
+
+impl Random for U256 {
+    fn random() -> Self {
+        U256::from_words(random(), random())
+    }
+}
+
+impl Random for I256 {
+    fn random() -> Self {
+        I256::from_words(random(), random())
+    }
+}
+
 fn test_some<T>()
 where
     T: Copy + fmt::Debug + StatBuffer + Marshal + Unmarshal<T> + PartialEq,
@@ -31,6 +49,21 @@ where
     for _ in 0..100 {
         let mut buffer = T::buffer();
         let v = random::<T>();
+
+        v.marshal(buffer.as_mut());
+        let u = T::unmarshal(buffer.as_ref());
+
+        assert_eq!(v, u);
+    }
+}
+
+fn test_some_large<T>()
+where
+    T: Copy + fmt::Debug + StatBuffer + Marshal + Unmarshal<T> + PartialEq + Random,
+{
+    for _ in 0..100 {
+        let mut buffer = T::buffer();
+        let v = T::random();
 
         v.marshal(buffer.as_mut());
         let u = T::unmarshal(buffer.as_ref());
@@ -60,6 +93,16 @@ fn test_u64() {
 }
 
 #[test]
+fn test_u128() {
+    test_some::<u128>()
+}
+
+#[test]
+fn test_u256() {
+    test_some_large::<U256>();
+}
+
+#[test]
 fn test_i8() {
     test_some::<i8>()
 }
@@ -77,6 +120,16 @@ fn test_i32() {
 #[test]
 fn test_i64() {
     test_some::<i64>()
+}
+
+#[test]
+fn test_i128() {
+    test_some::<i128>()
+}
+
+#[test]
+fn test_i256() {
+    test_some_large::<I256>()
 }
 
 #[test]

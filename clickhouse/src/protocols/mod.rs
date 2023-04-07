@@ -33,17 +33,13 @@ pub enum Packet {
     Data(Block),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Stage {
+    #[default]
     Default = 0,
     InsertPrepare,
     InsertStarted,
     EOS,
-}
-impl Default for Stage {
-    fn default() -> Self {
-        Stage::Default
-    }
 }
 
 pub const DBMS_MIN_REVISION_WITH_CLIENT_INFO: u64 = 54032;

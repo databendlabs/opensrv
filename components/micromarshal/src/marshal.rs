@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use ethnum::{I256, U256};
 use ordered_float::OrderedFloat;
 
 pub trait Marshal {
@@ -45,6 +46,20 @@ impl Marshal for u64 {
     }
 }
 
+impl Marshal for u128 {
+    fn marshal(&self, scratch: &mut [u8]) {
+        let bytes = self.to_le_bytes();
+        scratch.copy_from_slice(&bytes);
+    }
+}
+
+impl Marshal for U256 {
+    fn marshal(&self, scratch: &mut [u8]) {
+        let bytes = self.to_le_bytes();
+        scratch.copy_from_slice(&bytes);
+    }
+}
+
 impl Marshal for i8 {
     fn marshal(&self, scratch: &mut [u8]) {
         scratch[0] = *self as u8;
@@ -66,6 +81,20 @@ impl Marshal for i32 {
 }
 
 impl Marshal for i64 {
+    fn marshal(&self, scratch: &mut [u8]) {
+        let bytes = self.to_le_bytes();
+        scratch.copy_from_slice(&bytes);
+    }
+}
+
+impl Marshal for i128 {
+    fn marshal(&self, scratch: &mut [u8]) {
+        let bytes = self.to_le_bytes();
+        scratch.copy_from_slice(&bytes);
+    }
+}
+
+impl Marshal for I256 {
     fn marshal(&self, scratch: &mut [u8]) {
         let bytes = self.to_le_bytes();
         scratch.copy_from_slice(&bytes);
