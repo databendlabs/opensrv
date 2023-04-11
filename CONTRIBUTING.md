@@ -19,5 +19,5 @@ For changelog:
 
 ```
 pip install git-changelog
-git-changelog -o CHANGELOG.md -s angular -t keepachangelog .
+git-changelog -o CHANGELOG.md -c angular -t keepachangelog .
 ```

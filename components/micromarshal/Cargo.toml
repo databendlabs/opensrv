@@ -1,6 +1,6 @@
 [package]
 name = "micromarshal"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Databend Authors <opensource@datafuselabs.com>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -14,7 +14,6 @@ keywords = ["marshal", "read", "decode"]
 
 [lib]
 doctest = false
-
 
 [dependencies]
 ordered-float = "3.1.0"
