@@ -1,6 +1,6 @@
 # OpenSrv &emsp; [![Build Status]][actions]
 
-[Build Status]: https://img.shields.io/github/workflow/status/datafuselabs/opensrv/CI/main
+[Build Status]: https://img.shields.io/github/actions/workflow/status/datafuselabs/opensrv/ci.yaml?branch=main
 [actions]: https://github.com/datafuselabs/opensrv/actions?query=branch%3Amain
 
 Async bindings for emulating database servers. Currently, support for ClickHouse and MySql/MariaDB is provided.
