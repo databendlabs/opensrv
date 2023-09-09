@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 <!-- insertion marker -->
-## [v0.4.0](https://github.com/datafuselabs/opensrv/releases/tag/v0.4.0) - 2023-04-09
+## [v0.4.1](https://github.com/datafuselabs/opensrv/releases/tag/v0.4.1) - 2023-09-09
+
+<small>[Compare with latest](https://github.com/datafuselabs/opensrv/compare/v0.4.0...v0.4.1)</small>
+
+### Bug Fixes
+
+- try to fix memory safety problem ([2f84755](https://github.com/datafuselabs/opensrv/commit/2f84755dfa0ec32de752b7530580f985cb027896) by Chojan Shang).
+
+<!-- insertion marker -->
+## [v0.4.0](https://github.com/datafuselabs/opensrv/releases/tag/v0.4.0) - 2023-04-11
 
 <small>[Compare with v0.3.0](https://github.com/datafuselabs/opensrv/compare/v0.3.0...v0.4.0)</small>
 
