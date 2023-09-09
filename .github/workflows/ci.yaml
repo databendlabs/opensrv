@@ -16,7 +16,7 @@ jobs:
     name: Check license header
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: apache/skywalking-eyes/header@501a28d2fb4a9b962661987e50cf0219631b32ff
         with:
           config: .github/licenserc.yaml
@@ -25,7 +25,7 @@ jobs:
     name: Audit security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Install cargo-aduit
         uses: actions-rs/cargo@v1
         with:
@@ -40,7 +40,7 @@ jobs:
     name: Audit style
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Check clippy
         uses: actions-rs/cargo@v1
         with:
@@ -62,7 +62,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Cargo build
         uses: actions-rs/cargo@v1

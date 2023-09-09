@@ -62,10 +62,12 @@ impl<R: Read> PacketReader<R> {
                     }
                     Err(nom::Err::Incomplete(_)) | Err(nom::Err::Error(_)) => {}
                     Err(nom::Err::Failure(ctx)) => {
-                        return Err(io::Error::new(
+                        let err = Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             format!("{:?}", ctx),
                         ));
+                        self.bytes.truncate(self.remaining);
+                        return err;
                     }
                 }
             }
