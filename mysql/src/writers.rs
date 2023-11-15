@@ -73,7 +73,6 @@ pub async fn write_err<W: AsyncWrite + Unpin>(
     w.end_packet().await
 }
 
-use std::borrow::Borrow;
 use tokio::io::AsyncWrite;
 
 pub(crate) async fn write_prepare_ok<'a, PI, CI, W>(
@@ -124,7 +123,6 @@ where
     W: AsyncWrite + Unpin,
 {
     for c in i {
-        let c = c.borrow();
         use crate::myc::constants::UTF8_GENERAL_CI;
         w.write_lenenc_str(b"def")?;
         w.write_lenenc_str(b"")?;
