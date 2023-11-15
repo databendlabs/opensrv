@@ -93,7 +93,7 @@ fn test_display() {
     );
 
     assert_eq!(
-        "Thu, 01 Jan 1970 00:00:00 +0000".to_string(),
+        "Thu, 1 Jan 1970 00:00:00 +0000".to_string(),
         format!("{:#}", ValueRef::DateTime(0, Tz::Zulu))
     );
 
