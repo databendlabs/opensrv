@@ -105,7 +105,7 @@ impl ColumnData for DateTime64ColumnData {
 
 pub fn from_datetime<T: chrono::offset::TimeZone>(time: DateTime<T>, precision: u32) -> i64 {
     let base10: i64 = 10;
-    let timestamp = time.timestamp_nanos();
+    let timestamp = time.timestamp_nanos_opt().unwrap();
     timestamp / base10.pow(9 - precision)
 }
 
