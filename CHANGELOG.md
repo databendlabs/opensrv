@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 <!-- insertion marker -->
-## [v0.5.0](https://github.com/PsiACE/opensrv/releases/tag/v0.5.0) - 2023-11-16
+## [v0.5.0](https://github.com/PsiACE/opensrv/releases/tag/v0.5.0) - 2023-11-06
 
 <small>[Compare with latest](https://github.com/PsiACE/opensrv/compare/v0.4.1...v0.5.0)</small>
+
+### Features
+
+- try to release v0.5.0 ([df0cd64](https://github.com/PsiACE/opensrv/commit/df0cd64bdb49ac57e7afee83e4f9c86161020f09) by Chojan Shang).
 
 <!-- insertion marker -->
 ## [v0.4.1](https://github.com/PsiACE/opensrv/releases/tag/v0.4.1) - 2023-09-09
