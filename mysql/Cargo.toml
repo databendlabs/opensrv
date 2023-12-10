@@ -24,7 +24,7 @@ chrono = "0.4.20"
 mysql_common = { version = "0.31.0", features = ["chrono"] }
 nom = "7.1.0"
 tokio = { version = "1.17.0", features = ["io-util", "io-std"] }
-tokio-rustls = { version = "0.24", optional = true }
+tokio-rustls = { version = "0.25", optional = true }
 pin-project-lite = { version = "0.2.9", optional = true }
 
 [dev-dependencies]
@@ -35,7 +35,8 @@ futures = "0.3"
 rcgen = "0.11"
 tempfile = "3.3.0"
 native-tls = "0.2.8"
-rustls-pemfile = { version = "1.0" }
+rustls-pemfile = { version = "2.0" }
+rustls-pki-types = "1.0"
 
 [[example]]
 name = "serve_auth"

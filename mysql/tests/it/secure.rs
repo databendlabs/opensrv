@@ -22,13 +22,14 @@
 mod tls {
 
     use rustls_pemfile::{certs, pkcs8_private_keys};
+    use rustls_pki_types::{CertificateDer, PrivateKeyDer};
     use std::{
         fs::File,
         io::{self, BufReader, ErrorKind},
         sync::Arc,
     };
     use tokio::io::AsyncWrite;
-    use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
+    use tokio_rustls::rustls::ServerConfig;
 
     use opensrv_mysql::*;
     use tokio::net::TcpListener;
@@ -70,14 +71,14 @@ mod tls {
 
     fn setup_tls() -> Result<ServerConfig, io::Error> {
         let cert = certs(&mut BufReader::new(File::open("tests/ssl/server.crt")?))
-            .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid cert"))
-            .map(|mut certs| certs.drain(..).map(Certificate).collect())?;
+            .collect::<Result<Vec<CertificateDer>, io::Error>>()?;
+
         let key = pkcs8_private_keys(&mut BufReader::new(File::open("tests/ssl/server.key")?))
-            .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid key"))
-            .map(|mut keys| keys.drain(..).map(PrivateKey).next().unwrap())?;
+            .map(|key| key.map(PrivateKeyDer::from))
+            .collect::<Result<Vec<PrivateKeyDer>, io::Error>>()?
+            .remove(0);
 
         let config = ServerConfig::builder()
-            .with_safe_defaults()
             .with_no_client_auth()
             .with_single_cert(cert, key)
             .map_err(|err| io::Error::new(ErrorKind::InvalidInput, err))?;
