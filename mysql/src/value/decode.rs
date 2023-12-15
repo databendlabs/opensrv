@@ -240,15 +240,19 @@ impl<'a> From<Value<'a>> for NaiveDateTime {
 }
 
 pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
-    let ValueInner::Datetime(mut v) = val.0 else {
+    let ValueInner::Datetime(v) = val.0 else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("invalid type conversion from {:?} to datetime", val),
         ))
     };
 
+    let len = v.len();
+
+    let v = &mut io::Cursor::new(v);
+
     // unwrap safety: guarded by `v.len()` check
-    fn read_ymd(mut v: &[u8]) -> (i32, u32, u32) {
+    fn read_ymd(v: &mut io::Cursor<&[u8]>) -> (i32, u32, u32) {
         let y = i32::from(v.read_u16::<LittleEndian>().unwrap());
         let m = u32::from(v.read_u8().unwrap());
         let d = u32::from(v.read_u8().unwrap());
@@ -256,7 +260,7 @@ pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
     }
 
     // unwrap safety: guarded by `v.len()` check
-    fn read_hms(mut v: &[u8]) -> (u32, u32, u32) {
+    fn read_hms(v: &mut io::Cursor<&[u8]>) -> (u32, u32, u32) {
         let h = u32::from(v.read_u8().unwrap());
         let m = u32::from(v.read_u8().unwrap());
         let s = u32::from(v.read_u8().unwrap());
@@ -265,7 +269,7 @@ pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
 
     // Timestamp binary encoding:
     // https://mariadb.com/kb/en/resultset-row/#timestamp-binary-encoding
-    let d = match v.len() {
+    let d = match len {
         0 => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -297,7 +301,7 @@ pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("illegal length of timestamp value: {}", v.len()),
+                format!("illegal timestamp value length: {}", len),
             ))
         }
     };
