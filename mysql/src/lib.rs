@@ -98,7 +98,7 @@ pub struct OkResponse {
 pub use crate::errorcodes::ErrorKind;
 pub use crate::params::{ParamParser, ParamValue, Params};
 pub use crate::resultset::{InitWriter, QueryResultWriter, RowWriter, StatementMetaWriter};
-pub use crate::value::{ToMysqlValue, Value, ValueInner};
+pub use crate::value::{decode::to_naive_datetime, ToMysqlValue, Value, ValueInner};
 use crate::{commands::ClientHandshake, packet_reader::PacketReader, packet_writer::PacketWriter};
 
 const SCRAMBLE_SIZE: usize = 20;
