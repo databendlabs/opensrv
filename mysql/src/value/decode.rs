@@ -235,29 +235,83 @@ impl<'a> From<Value<'a>> for NaiveDate {
 
 impl<'a> From<Value<'a>> for NaiveDateTime {
     fn from(val: Value<'a>) -> Self {
-        if let ValueInner::Datetime(mut v) = val.0 {
-            assert!(v.len() == 7 || v.len() == 11);
-            let d = NaiveDate::from_ymd_opt(
-                i32::from(v.read_u16::<LittleEndian>().unwrap()),
-                u32::from(v.read_u8().unwrap()),
-                u32::from(v.read_u8().unwrap()),
-            )
-            .unwrap();
-
-            let h = u32::from(v.read_u8().unwrap());
-            let m = u32::from(v.read_u8().unwrap());
-            let s = u32::from(v.read_u8().unwrap());
-
-            if v.len() == 11 {
-                let us = v.read_u32::<LittleEndian>().unwrap();
-                d.and_hms_micro_opt(h, m, s, us).unwrap()
-            } else {
-                d.and_hms_opt(h, m, s).unwrap()
-            }
-        } else {
-            panic!("invalid type conversion from {:?} to datetime", val)
-        }
+        to_naive_datetime(val).unwrap()
     }
+}
+
+pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
+    let ValueInner::Datetime(v) = val.0 else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid type conversion from {:?} to datetime", val),
+        ));
+    };
+
+    let len = v.len();
+
+    let v = &mut io::Cursor::new(v);
+
+    // unwrap safety: guarded by `v.len()` check
+    fn read_ymd(v: &mut io::Cursor<&[u8]>) -> (i32, u32, u32) {
+        let y = i32::from(v.read_u16::<LittleEndian>().unwrap());
+        let m = u32::from(v.read_u8().unwrap());
+        let d = u32::from(v.read_u8().unwrap());
+        (y, m, d)
+    }
+
+    // unwrap safety: guarded by `v.len()` check
+    fn read_hms(v: &mut io::Cursor<&[u8]>) -> (u32, u32, u32) {
+        let h = u32::from(v.read_u8().unwrap());
+        let m = u32::from(v.read_u8().unwrap());
+        let s = u32::from(v.read_u8().unwrap());
+        (h, m, s)
+    }
+
+    // Timestamp binary encoding:
+    // https://mariadb.com/kb/en/resultset-row/#timestamp-binary-encoding
+    let d = match len {
+        0 => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "'0000-00-00 00:00:00' is a valid timestamp value but not representable by NaiveDateTime!",
+            ))
+        }
+        4 => {
+            let (y, m, d) = read_ymd(v);
+            NaiveDate::from_ymd_opt(y, m, d).and_then(|x| x.and_hms_opt(0, 0, 0))
+        }
+        7 => {
+            let (y, m, d) = read_ymd(v);
+            NaiveDate::from_ymd_opt(y, m, d).and_then(|x| {
+                let (h, m, s) = read_hms(v);
+                x.and_hms_opt(h, m, s)
+            })
+        }
+        11 => {
+            let (y, m, d) = read_ymd(v);
+            NaiveDate::from_ymd_opt(y, m, d).and_then(|x| {
+                let (h, m, s) = read_hms(v);
+
+                // unwrap safety: guarded by `v.len()` check
+                let us = v.read_u32::<LittleEndian>().unwrap();
+
+                x.and_hms_micro_opt(h, m, s, us)
+            })
+        }
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("illegal timestamp value length: {}", len),
+            ))
+        }
+    };
+
+    d.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid data conversion from {:?} to datetime", val),
+        )
+    })
 }
 
 use std::time::Duration;

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod decode;
+pub(crate) mod decode;
 mod encode;
 
 pub use self::decode::{Value, ValueInner};
