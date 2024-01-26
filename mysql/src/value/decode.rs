@@ -244,7 +244,7 @@ pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("invalid type conversion from {:?} to datetime", val),
-        ))
+        ));
     };
 
     let len = v.len();
