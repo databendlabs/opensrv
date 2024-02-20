@@ -422,7 +422,7 @@ pub fn parse_date_time64(source: &str) -> Option<(u32, Option<String>)> {
         .skip(token(')'));
 
     match parser.parse(source) {
-        Ok((pair, remain)) if remain.is_empty() => Some(pair),
+        Ok((pair, "")) => Some(pair),
         _ => None,
     }
 }
