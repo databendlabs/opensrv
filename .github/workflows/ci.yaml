@@ -27,14 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install cargo-aduit
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-audit
+        run: cargo install cargo-audit
       - name: Audit dependencies
-        uses: actions-rs/cargo@v1
-        with:
-          command: audit
+        run: cargo audit
 
   style:
     name: Audit style
@@ -42,16 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --workspace --all-targets --all-features -- -D warnings
-
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Check format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
   test:
     name: Run tests
@@ -63,23 +51,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Cargo build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-
       - name: Install mysql-client
-        run:  |
-              if [ "$RUNNER_OS" == "macOS" ]; then 
-                brew install mysql
-              fi
-
-      - name: Cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --lib --bins --tests -- --include-ignored
+        if: ${{ contains(matrix.os, 'macos') }}
+        run: brew install mysql
+      - run: cargo build
+      - run: cargo test --lib --bins --tests -- --include-ignored
 
   pass:
     name: All tests passed
