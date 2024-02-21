@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 <!-- insertion marker -->
+## [v0.7.0](https://github.com/datafuselabs/opensrv/releases/tag/v0.7.0) - 2024-02-21
+
+<small>[Compare with v0.6.0](https://github.com/datafuselabs/opensrv/compare/v0.6.0...v0.7.0)</small>
+
+### Bug Fixes
+
+- correctly decode mysql binary timestamp (#60) ([b47d5c7](https://github.com/datafuselabs/opensrv/commit/b47d5c7aaf0758a2bcb487a32105b2f3a987cfd8) by LFC).
+
 ## [v0.6.0](https://github.com/datafuselabs/opensrv/releases/tag/v0.6.0) - 2023-12-12
 
 <small>[Compare with v0.5.0](https://github.com/datafuselabs/opensrv/compare/v0.5.0...v0.6.0)</small>
