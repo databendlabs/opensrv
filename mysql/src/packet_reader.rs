@@ -46,15 +46,17 @@ fn reuse_or_create_buf(old_buf: bytes::Bytes, last_buf_size: usize) -> (usize, B
     let new_buf_size = calc_new_buf_size(last_buf_size);
     match old_buf.try_into_mut() {
         Ok(mut unique) => {
-            // if old buffer still contain bytes unread, need to save those bytes too
             let remain = unique.clone();
+            let len = remain.len();
+            debug_assert!(len <= new_buf_size);
+            // resize will save old bytes unchanged and fill the rest with 0
             unique.resize(new_buf_size, 0);
-            unique[0..remain.len()].copy_from_slice(&remain);
-            (remain.len(), unique)
+            (len, unique)
         }
         Err(remain) => {
             let mut buf = BytesMut::with_capacity(new_buf_size);
             buf.resize(new_buf_size, 0);
+            // if old buffer still contain bytes unread, need to save those bytes too
             buf[0..remain.len()].copy_from_slice(&remain);
             (remain.len(), buf)
         }
