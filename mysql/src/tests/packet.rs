@@ -18,14 +18,14 @@ use crate::U24_MAX;
 #[test]
 fn test_one_ping() {
     assert_eq!(
-        onepacket(&[0x01, 0, 0, 0, 0x10]).unwrap().1,
-        (0, &[0x10][..])
+        onepacket((&[0x01, 0, 0, 0, 0x10][..]).into()).unwrap().1,
+        (0, (&[0x10][..]).into())
     );
 }
 
 #[test]
 fn test_ping() {
-    let p = packet(&[0x01, 0, 0, 0, 0x10]).unwrap().1;
+    let p = packet((&[0x01, 0, 0, 0, 0x10][..]).into()).unwrap().1;
     assert_eq!(p.0, 0);
     assert_eq!(&*p.1, &[0x10][..]);
 }
@@ -39,7 +39,7 @@ fn test_long_exact() {
     data.push(0x00);
     data.push(1);
 
-    let (rest, p) = packet(&data[..]).unwrap();
+    let (rest, p) = packet((&data[..]).into()).unwrap();
     assert!(rest.is_empty());
     assert_eq!(p.0, 1);
     assert_eq!(p.1.len(), U24_MAX);
@@ -56,7 +56,7 @@ fn test_long_more() {
     data.push(1);
     data.push(0x10);
 
-    let (rest, p) = packet(&data[..]).unwrap();
+    let (rest, p) = packet((&data[..]).into()).unwrap();
     assert!(rest.is_empty());
     assert_eq!(p.0, 1);
     assert_eq!(p.1.len(), U24_MAX + 1);
