@@ -46,8 +46,7 @@ fn reuse_or_create_buf(old_buf: bytes::Bytes, last_buf_size: usize) -> (usize, B
     let new_buf_size = calc_new_buf_size(last_buf_size);
     match old_buf.try_into_mut() {
         Ok(mut unique) => {
-            let remain = unique.clone();
-            let len = remain.len();
+            let len = unique.len();
             debug_assert!(len <= new_buf_size);
             // resize will save old bytes unchanged and fill the rest with 0
             unique.resize(new_buf_size, 0);
