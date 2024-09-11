@@ -27,12 +27,37 @@ use tokio::io::AsyncReadExt;
 const PACKET_BUFFER_SIZE: usize = 4_096;
 const PACKET_LARGE_BUFFER_SIZE: usize = 1_048_576;
 
+/// Calculate the new buffer size for the next read
 fn calc_new_buf_size(last_buf_size: usize) -> usize {
     if last_buf_size >= PACKET_BUFFER_SIZE * 2 {
         // if packet is already too large, use larger buffer to avoid multiple allocation
         PACKET_LARGE_BUFFER_SIZE
     } else {
         std::cmp::max(PACKET_BUFFER_SIZE, last_buf_size * 2)
+    }
+}
+
+/// reuse old buffer if possible, otherwise create a new buffer
+///
+/// return (the idx to start writing to the buffer,  and the buffer itself)
+///
+/// will copy the remain bytes from the old buffer to the new buffer if reusing
+fn reuse_or_create_buf(old_buf: bytes::Bytes, last_buf_size: usize) -> (usize, BytesMut) {
+    let new_buf_size = calc_new_buf_size(last_buf_size);
+    match old_buf.try_into_mut() {
+        Ok(mut unique) => {
+            // if old buffer still contain bytes unread, need to save those bytes too
+            let remain = unique.clone();
+            unique.resize(new_buf_size, 0);
+            unique[0..remain.len()].copy_from_slice(&remain);
+            (remain.len(), unique)
+        }
+        Err(remain) => {
+            let mut buf = BytesMut::with_capacity(new_buf_size);
+            buf.resize(new_buf_size, 0);
+            buf[0..remain.len()].copy_from_slice(&remain);
+            (remain.len(), buf)
+        }
     }
 }
 
@@ -54,6 +79,7 @@ impl<R: Read> PacketReader<R> {
     #[allow(dead_code)]
     pub fn next(&mut self) -> io::Result<Option<(u8, Packet<'_>)>> {
         loop {
+            let last_buffer_size = self.bytes.len();
             if !self.bytes.is_empty() {
                 // coping `bytes::Bytes` are very cheap, just move the pointer and increase the ref count.
                 match packet(self.bytes.clone().into()) {
@@ -73,15 +99,11 @@ impl<R: Read> PacketReader<R> {
             }
 
             // read more buffer
-            let last_buffer_size = self.bytes.len();
-            // allocate new buffer if old buffer have packets that is still in use.
-            // notice if old buffer have no alive packet, it's space will get reused.
-            let mut buf = std::mem::take(&mut self.bytes)
-                .try_into_mut()
-                .unwrap_or_else(|_| BytesMut::with_capacity(calc_new_buf_size(last_buffer_size)));
+            let (start, mut buf) =
+                reuse_or_create_buf(std::mem::take(&mut self.bytes), last_buffer_size);
 
-            let read_cnt = self.r.read(&mut buf)?;
-            buf.truncate(read_cnt);
+            let read_cnt = self.r.read(&mut buf[start..])?;
+            buf.truncate(start + read_cnt);
             self.bytes = buf.freeze();
 
             // for a [TcpStream], returning zero indicates the connection was shut down correctly.
@@ -119,6 +141,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for PacketReader<R> {
 impl<R: AsyncRead + Unpin> PacketReader<R> {
     pub async fn next_async(&mut self) -> io::Result<Option<(u8, Packet<'_>)>> {
         loop {
+            let last_buffer_size = self.bytes.len();
             if !self.bytes.is_empty() {
                 match packet(self.bytes.clone().into()) {
                     Ok((rest, p)) => {
@@ -136,15 +159,11 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
             }
 
             // read more buffer
-            let last_buffer_size = self.bytes.len();
-            // allocate new buffer if old buffer have packets that is still in use.
-            // notice if old buffer have no alive packet, it's space will get reused.
-            let mut buf = std::mem::take(&mut self.bytes)
-                .try_into_mut()
-                .unwrap_or_else(|_| BytesMut::with_capacity(calc_new_buf_size(last_buffer_size)));
+            let (start, mut buf) =
+                reuse_or_create_buf(std::mem::take(&mut self.bytes), last_buffer_size);
 
-            let read_cnt = self.r.read(&mut buf).await?;
-            buf.truncate(read_cnt);
+            let read_cnt = self.r.read(&mut buf[start..]).await?;
+            buf.truncate(start + read_cnt);
 
             self.bytes = buf.freeze();
 
@@ -222,7 +241,7 @@ impl nom::InputTake for NomBytes {
     fn take_split(&self, count: usize) -> (Self, Self) {
         let mut prefix = self.0.clone();
         let suffix = prefix.split_off(count);
-        (NomBytes(prefix), NomBytes(suffix))
+        (NomBytes(suffix), NomBytes(prefix))
     }
 }
 
