@@ -397,8 +397,8 @@ mod test {
         buf.freeze()
     }
 
-    #[test]
-    fn test_various_packet_size() {
+    #[tokio::test]
+    async fn test_various_packet_size() {
         // test for off by one, and off by header size(3 bytes for length and 1 for seq num)
         let testcases = [
             0,
@@ -438,6 +438,21 @@ mod test {
             let mut last_seq = 0;
             let mut total_size = 0;
             while let Some((seq, packet)) = reader.next().unwrap() {
+                if seq != 0 {
+                    assert!(seq > last_seq);
+                }
+                total_size += packet.len();
+                last_seq = seq;
+            }
+            assert_eq!(total_size, input_size);
+        }
+        for input_size in testcases {
+            let large_data = bytes::Bytes::from(vec![0; input_size]);
+            let packet = mock_packet(large_data, 0);
+            let mut reader = PacketReader::new(packet.as_ref());
+            let mut last_seq = 0;
+            let mut total_size = 0;
+            while let Some((seq, packet)) = reader.next_async().await.unwrap() {
                 if seq != 0 {
                     assert!(seq > last_seq);
                 }
