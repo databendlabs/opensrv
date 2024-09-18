@@ -47,9 +47,15 @@ fn reuse_or_create_buf(old_buf: bytes::Bytes, last_buf_size: usize) -> (usize, B
     match old_buf.try_into_mut() {
         Ok(mut unique) => {
             let len = unique.len();
-            debug_assert!(len <= new_buf_size);
+            let resize_buf = if new_buf_size <= len {
+                // if new buffer is smaller than old buffer, just double the size
+                len * 2
+            } else {
+                new_buf_size
+            };
+            debug_assert!(len < resize_buf);
             // resize will save old bytes unchanged and fill the rest with 0
-            unique.resize(new_buf_size, 0);
+            unique.resize(resize_buf, 0);
             (len, unique)
         }
         Err(remain) => {
@@ -89,7 +95,8 @@ impl<R: Read> PacketReader<R> {
                         self.bytes = rest.into();
                         return Ok(Some(p));
                     }
-                    Err(nom::Err::Incomplete(_)) | Err(nom::Err::Error(_)) => {}
+                    Err(nom::Err::Incomplete(_)) | Err(nom::Err::Error(_)) => {
+                    }
                     Err(nom::Err::Failure(ctx)) => {
                         let err = Err(io::Error::new(
                             io::ErrorKind::InvalidData,
@@ -103,7 +110,6 @@ impl<R: Read> PacketReader<R> {
             // read more buffer
             let (start, mut buf) =
                 reuse_or_create_buf(std::mem::take(&mut self.bytes), last_buffer_size);
-
             let read_cnt = self.r.read(&mut buf[start..])?;
             buf.truncate(start + read_cnt);
             self.bytes = buf.freeze();
@@ -325,6 +331,7 @@ impl<'a> Deref for Packet<'a> {
     }
 }
 
+// note that for small packet, this function is zero-copy, but for packet >= 2^24 it currently copy stuff, this await further optimization
 pub(crate) fn packet<'a>(i: NomBytes) -> nom::IResult<NomBytes, (u8, Packet<'a>)> {
     nom::combinator::map(
         nom::sequence::pair(
@@ -343,19 +350,101 @@ pub(crate) fn packet<'a>(i: NomBytes) -> nom::IResult<NomBytes, (u8, Packet<'a>)
                     (nseq, pkt)
                 },
             ),
-            onepacket,
+            nom::combinator::opt(onepacket),
         ),
-        move |(full, last)| {
-            let seq = last.0;
-            let pkt = if let Some(mut pkt) = full.1 {
-                assert_eq!(last.0, full.0 + 1);
-                pkt.extend_from_slice(last.1.as_ref());
-                pkt.freeze()
-            } else {
-                // TODO: avoid copy
-                last.1 .0
-            };
-            (seq, Packet::from_bytes(pkt))
+        move |((full_seq, full_pkt), last)| match (full_pkt, last) {
+            (Some(mut full_pkt), Some((last_seq, last_pkt))) => {
+                assert_eq!(last_seq, full_seq + 1);
+                full_pkt.extend_from_slice(last_pkt.as_ref());
+                let final_pkt = full_pkt.freeze();
+                Ok((last_seq, Packet::from_bytes(final_pkt)))
+            }
+            (Some(full_pkt), None) => Ok((full_seq, Packet::from_bytes(full_pkt.freeze()))),
+            (None, Some((last_seq, last_pkt))) => Ok((last_seq, Packet::from_bytes(last_pkt.0))),
+            // TODO: might know length
+            (None, None) => Err(nom::Err::Incomplete(Needed::Unknown)),
         },
     )(i)
+    .map(|(rest, parsed)| match parsed {
+        Ok(parsed) => Ok((rest, parsed)),
+        Err(e) => Err(e),
+    })?
+}
+
+#[cfg(test)]
+mod test {
+    use bytes::{Buf, BufMut};
+
+    use super::*;
+
+    fn mock_packet(mut data: bytes::Bytes, start_seq: u8) -> bytes::Bytes {
+        let mut buf = BytesMut::new();
+        let mut seq = start_seq;
+        while data.len() > U24_MAX {
+            buf.extend_from_slice(&[0xff, 0xff, 0xff]);
+            buf.put_u8(seq);
+            buf.put(&data[0..U24_MAX]);
+            data.advance(U24_MAX);
+            seq += 1;
+        }
+        if !data.is_empty() {
+            let le_u64: [u8; 8] = data.len().to_le_bytes();
+            let le_u24 = &le_u64[0..3];
+            buf.extend_from_slice(le_u24);
+            buf.put_u8(seq);
+            buf.put(data);
+        }
+        buf.freeze()
+    }
+
+    #[test]
+    fn test_various_packet_size() {
+        // test for off by one, and off by header size(3 bytes for length and 1 for seq num)
+        let testcases = [
+            0,
+            1,
+            2,
+            PACKET_BUFFER_SIZE - 1 - 4,
+            PACKET_BUFFER_SIZE - 1,
+            PACKET_BUFFER_SIZE,
+            PACKET_BUFFER_SIZE + 1,
+            PACKET_BUFFER_SIZE + 1 + 4,
+            PACKET_LARGE_BUFFER_SIZE - 4 - 1,
+            PACKET_LARGE_BUFFER_SIZE - 4,
+            PACKET_LARGE_BUFFER_SIZE - 1,
+            PACKET_LARGE_BUFFER_SIZE,
+            PACKET_LARGE_BUFFER_SIZE + 1,
+            PACKET_LARGE_BUFFER_SIZE + 4,
+            PACKET_LARGE_BUFFER_SIZE + 4 + 1,
+            U24_MAX - 4 - 1,
+            U24_MAX - 4,
+            U24_MAX - 1,
+            U24_MAX,
+            U24_MAX + 1,
+            U24_MAX + 4,
+            U24_MAX + 4 + 1,
+            U24_MAX * 2 - 4 - 1,
+            U24_MAX * 2 - 4,
+            U24_MAX * 2 - 1,
+            U24_MAX * 2,
+            U24_MAX * 2 + 1,
+            U24_MAX * 2 + 4,
+            U24_MAX * 2 + 4 + 1,
+        ];
+        for input_size in testcases {
+            let large_data = bytes::Bytes::from(vec![0; input_size]);
+            let packet = mock_packet(large_data, 0);
+            let mut reader = PacketReader::new(packet.reader());
+            let mut last_seq = 0;
+            let mut total_size = 0;
+            while let Some((seq, packet)) = reader.next().unwrap() {
+                if seq != 0 {
+                    assert!(seq > last_seq);
+                }
+                total_size += packet.len();
+                last_seq = seq;
+            }
+            assert_eq!(total_size, input_size);
+        }
+    }
 }
