@@ -20,7 +20,7 @@ tls = ["tokio-rustls", "pin-project-lite"]
 [dependencies]
 async-trait = "0.1.52"
 byteorder = "1.4.3"
-bytes = "1.7.1"
+bytes = "1"
 chrono = "0.4.20"
 mysql_common = { version = "0.32.0", features = ["chrono"] }
 nom = "7.1.0"
