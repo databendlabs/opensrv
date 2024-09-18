@@ -85,6 +85,7 @@ impl<R: Read> PacketReader<R> {
                 // coping `bytes::Bytes` are very cheap, just move the pointer and increase the ref count.
                 match packet(self.bytes.clone().into()) {
                     Ok((rest, p)) => {
+                        // most time the `rest` is either empty or very small, so it's cheap to copy it later into next buffer
                         self.bytes = rest.into();
                         return Ok(Some(p));
                     }
