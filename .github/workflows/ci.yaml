@@ -54,7 +54,7 @@ jobs:
       - name: Install mysql-client
         if: ${{ contains(matrix.os, 'macos') }}
         run: | 
-          brew install mysql@8.4
+          brew install mysql@8.3
           ln -s /opt/homebrew/opt/mysql@8.4 /opt/homebrew/opt/mysql
           echo 'export PATH="/opt/homebrew/opt/mysql/bin:$PATH"' >> ~/.zshrc
       - run: cargo build
