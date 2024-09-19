@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::f64::EPSILON;
-
 use opensrv_clickhouse::types::column::*;
 use rand::random;
 
@@ -36,7 +34,7 @@ fn test_push_and_get() {
         assert_eq!(list.len(), count);
 
         for (i, v) in vs.iter().take(count).enumerate() {
-            assert!((list.at(i) - *v).abs() < EPSILON);
+            assert!((list.at(i) - *v).abs() < f64::EPSILON);
         }
 
         let k = random();

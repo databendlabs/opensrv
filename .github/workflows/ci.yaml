@@ -55,7 +55,9 @@ jobs:
         if: ${{ contains(matrix.os, 'macos') }}
         run: brew install mysql@8.4
       - run: cargo build
-      - run: cargo test --lib --bins --tests -- --include-ignored
+      - run: |
+          export PATH="/opt/homebrew/opt/mysql@8.4/bin:$PATH"
+          cargo test --lib --bins --tests -- --include-ignored
 
   pass:
     name: All tests passed

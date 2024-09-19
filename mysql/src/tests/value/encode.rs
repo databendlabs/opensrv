@@ -57,14 +57,14 @@ mod roundtrip_text {
     rt!(f32_one, f32, 1.0);
     rt!(f64_one, f64, 1.0);
 
-    rt!(u8_max, u8, u8::max_value());
-    rt!(i8_max, i8, i8::max_value());
-    rt!(u16_max, u16, u16::max_value());
-    rt!(i16_max, i16, i16::max_value());
-    rt!(u32_max, u32, u32::max_value());
-    rt!(i32_max, i32, i32::max_value());
-    rt!(u64_max, u64, u64::max_value());
-    rt!(i64_max, i64, i64::max_value());
+    rt!(u8_max, u8, u8::MAX);
+    rt!(i8_max, i8, i8::MAX);
+    rt!(u16_max, u16, u16::MAX);
+    rt!(i16_max, i16, i16::MAX);
+    rt!(u32_max, u32, u32::MAX);
+    rt!(i32_max, i32, i32::MAX);
+    rt!(u64_max, u64, u64::MAX);
+    rt!(i64_max, i64, i64::MAX);
 
     rt!(opt_none, Option<u8>, None);
     rt!(opt_some, Option<u8>, Some(1));
@@ -198,59 +198,23 @@ mod roundtrip_bin {
     rt!(f32_one, f32, 1.0, ColumnType::MYSQL_TYPE_FLOAT, false);
     rt!(f64_one, f64, 1.0, ColumnType::MYSQL_TYPE_DOUBLE, false);
 
-    rt!(
-        u8_max,
-        u8,
-        u8::max_value(),
-        ColumnType::MYSQL_TYPE_TINY,
-        false
-    );
-    rt!(
-        i8_max,
-        i8,
-        i8::max_value(),
-        ColumnType::MYSQL_TYPE_TINY,
-        true
-    );
-    rt!(
-        u16_max,
-        u16,
-        u16::max_value(),
-        ColumnType::MYSQL_TYPE_SHORT,
-        false
-    );
-    rt!(
-        i16_max,
-        i16,
-        i16::max_value(),
-        ColumnType::MYSQL_TYPE_SHORT,
-        true
-    );
-    rt!(
-        u32_max,
-        u32,
-        u32::max_value(),
-        ColumnType::MYSQL_TYPE_LONG,
-        false
-    );
-    rt!(
-        i32_max,
-        i32,
-        i32::max_value(),
-        ColumnType::MYSQL_TYPE_LONG,
-        true
-    );
+    rt!(u8_max, u8, u8::MAX, ColumnType::MYSQL_TYPE_TINY, false);
+    rt!(i8_max, i8, i8::MAX, ColumnType::MYSQL_TYPE_TINY, true);
+    rt!(u16_max, u16, u16::MAX, ColumnType::MYSQL_TYPE_SHORT, false);
+    rt!(i16_max, i16, i16::MAX, ColumnType::MYSQL_TYPE_SHORT, true);
+    rt!(u32_max, u32, u32::MAX, ColumnType::MYSQL_TYPE_LONG, false);
+    rt!(i32_max, i32, i32::MAX, ColumnType::MYSQL_TYPE_LONG, true);
     rt!(
         u64_max,
         u64,
-        u64::max_value(),
+        u64::MAX,
         ColumnType::MYSQL_TYPE_LONGLONG,
         false
     );
     rt!(
         i64_max,
         i64,
-        i64::max_value(),
+        i64::MAX,
         ColumnType::MYSQL_TYPE_LONGLONG,
         true
     );

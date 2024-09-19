@@ -83,8 +83,8 @@ where
 // NOTE: yes, I know the = / => distinction is ugly
 macro_rules! like_try_into {
     ($self:ident, $source:ty = $target:ty, $w:ident, $m:ident, $c:ident) => {{
-        let min = <$target>::min_value() as $source;
-        let max = <$target>::max_value() as $source;
+        let min = <$target>::MIN as $source;
+        let max = <$target>::MAX as $source;
         if *$self <= max && *$self >= min {
             $w.$m(*$self as $target)
         } else {
@@ -92,8 +92,8 @@ macro_rules! like_try_into {
         }
     }};
     ($self:ident, $source:ty => $target:ty, $w:ident, $m:ident, $c:ident) => {{
-        let min = <$target>::min_value() as $source;
-        let max = <$target>::max_value() as $source;
+        let min = <$target>::MIN as $source;
+        let max = <$target>::MAX as $source;
         if *$self <= max && *$self >= min {
             $w.$m::<LittleEndian>(*$self as $target)
         } else {
@@ -618,25 +618,25 @@ impl ToMysqlValue for myc::value::Value {
                 // smallest containing type, and then call on that
                 let signed = !c.colflags.contains(ColumnFlags::UNSIGNED_FLAG);
                 if signed {
-                    if n >= i64::from(i8::min_value()) && n <= i64::from(i8::max_value()) {
+                    if n >= i64::from(i8::MIN) && n <= i64::from(i8::MAX) {
                         (n as i8).to_mysql_bin(w, c)
-                    } else if n >= i64::from(i16::min_value()) && n <= i64::from(i16::max_value()) {
+                    } else if n >= i64::from(i16::MIN) && n <= i64::from(i16::MAX) {
                         (n as i16).to_mysql_bin(w, c)
-                    } else if n >= i64::from(i32::min_value()) && n <= i64::from(i32::max_value()) {
+                    } else if n >= i64::from(i32::MIN) && n <= i64::from(i32::MAX) {
                         (n as i32).to_mysql_bin(w, c)
                     } else {
                         n.to_mysql_bin(w, c)
                     }
                 } else if n < 0 {
                     Err(bad(self, c))
-                } else if n <= i64::from(u8::max_value()) {
+                } else if n <= i64::from(u8::MAX) {
                     (n as u8).to_mysql_bin(w, c)
-                } else if n <= i64::from(u16::max_value()) {
+                } else if n <= i64::from(u16::MAX) {
                     (n as u16).to_mysql_bin(w, c)
-                } else if n <= i64::from(u32::max_value()) {
+                } else if n <= i64::from(u32::MAX) {
                     (n as u32).to_mysql_bin(w, c)
                 } else {
-                    // must work since u64::max_value() > i64::max_value(), and n >= 0
+                    // must work since u64::MAX > i64::MAX, and n >= 0
                     (n as u64).to_mysql_bin(w, c)
                 }
             }
