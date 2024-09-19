@@ -95,8 +95,7 @@ impl<R: Read> PacketReader<R> {
                         self.bytes = rest.into();
                         return Ok(Some(p));
                     }
-                    Err(nom::Err::Incomplete(_)) | Err(nom::Err::Error(_)) => {
-                    }
+                    Err(nom::Err::Incomplete(_)) | Err(nom::Err::Error(_)) => {}
                     Err(nom::Err::Failure(ctx)) => {
                         let err = Err(io::Error::new(
                             io::ErrorKind::InvalidData,

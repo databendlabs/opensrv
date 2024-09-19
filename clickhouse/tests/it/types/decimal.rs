@@ -60,13 +60,13 @@ fn test_scale() {
 #[test]
 fn test_from_f32() {
     let value: f32 = Decimal::of(2, 4).into();
-    assert!((value - 2.0_f32).abs() <= std::f32::EPSILON);
+    assert!((value - 2.0_f32).abs() <= f32::EPSILON);
 }
 
 #[test]
 fn test_from_f64() {
     let value: f64 = Decimal::of(2, 4).into();
-    assert!((value - 2.0_f64).abs() < std::f64::EPSILON);
+    assert!((value - 2.0_f64).abs() < f64::EPSILON);
 }
 
 #[test]

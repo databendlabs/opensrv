@@ -92,6 +92,7 @@ impl Progress {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub(crate) struct ProfileInfo {
     pub rows: u64,
@@ -249,7 +250,9 @@ impl From<SqlType> for &'static SqlType {
                 let mut guard = TYPES_CACHE.lock().unwrap();
                 loop {
                     if let Some(value_ref) = guard.get(&value.clone()) {
-                        return unsafe { mem::transmute(value_ref.as_ref()) };
+                        return unsafe {
+                            mem::transmute::<std::pin::Pin<&SqlType>, &SqlType>(value_ref.as_ref())
+                        };
                     }
                     guard.insert(value.clone(), Box::pin(value.clone()));
                 }
