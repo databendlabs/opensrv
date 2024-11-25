@@ -1,6 +1,6 @@
 [package]
 name = "opensrv-mysql"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Databend Authors <opensource@datafuselabs.com>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -25,7 +25,7 @@ chrono = "0.4.20"
 mysql_common = { version = "0.32.0", features = ["chrono"] }
 nom = "7.1.0"
 tokio = { version = "1.17.0", features = ["io-util", "io-std"] }
-tokio-rustls = { version = "0.26", optional = true }
+tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring"] }
 pin-project-lite = { version = "0.2.9", optional = true }
 
 [dev-dependencies]
