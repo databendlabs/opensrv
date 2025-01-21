@@ -416,7 +416,7 @@ impl ToMysqlValue for Vec<u8> {
     }
 }
 
-impl<'a, T> ToMysqlValue for &'a T
+impl<T> ToMysqlValue for &T
 where
     T: ToMysqlValue + ?Sized,
 {

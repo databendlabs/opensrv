@@ -68,14 +68,14 @@ impl ColumnFrom for Vec<String> {
     }
 }
 
-impl<'a> ColumnFrom for Vec<&'a str> {
+impl ColumnFrom for Vec<&str> {
     fn column_from<W: ColumnWrapper>(source: Self) -> W::Wrapper {
         let data: Vec<_> = source.iter().map(ToString::to_string).collect();
         W::wrap(StringColumnData { pool: data.into() })
     }
 }
 
-impl<'a> ColumnFrom for Vec<&'a [u8]> {
+impl ColumnFrom for Vec<&[u8]> {
     fn column_from<W: ColumnWrapper>(data: Self) -> W::Wrapper {
         W::wrap(StringColumnData { pool: data.into() })
     }
