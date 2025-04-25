@@ -42,7 +42,7 @@ pub(crate) fn make<R>(reader: &mut R) -> CompressedReader<R> {
     }
 }
 
-impl<'a, R> CompressedReader<'a, R>
+impl<R> CompressedReader<'_, R>
 where
     R: Read + ReadEx,
 {
@@ -62,7 +62,7 @@ where
     }
 }
 
-impl<'a, R> Read for CompressedReader<'a, R>
+impl<R> Read for CompressedReader<'_, R>
 where
     R: Read + ReadEx,
 {

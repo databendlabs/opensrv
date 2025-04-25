@@ -311,7 +311,7 @@ pub struct Packet<'a> {
     _lifetime: PhantomData<&'a ()>, // NOTE: the lifetime can be removed since Bytes mangaes the lifetime by itself
 }
 
-impl<'a> Packet<'a> {
+impl Packet<'_> {
     fn from_bytes(bytes: bytes::Bytes) -> Self {
         Packet {
             bytes,
@@ -323,7 +323,7 @@ impl<'a> Packet<'a> {
 use crate::U24_MAX;
 use std::ops::Deref;
 
-impl<'a> Deref for Packet<'a> {
+impl Deref for Packet<'_> {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         self.bytes.as_ref()

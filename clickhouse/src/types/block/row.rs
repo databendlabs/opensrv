@@ -67,7 +67,7 @@ pub(crate) enum BlockRef<'a, K: ColumnType> {
     Owned(Arc<Block<K>>),
 }
 
-impl<'a, K: ColumnType> Clone for BlockRef<'a, K> {
+impl<K: ColumnType> Clone for BlockRef<'_, K> {
     fn clone(&self) -> Self {
         match self {
             BlockRef::Borrowed(block_ref) => BlockRef::Borrowed(*block_ref),
@@ -76,7 +76,7 @@ impl<'a, K: ColumnType> Clone for BlockRef<'a, K> {
     }
 }
 
-impl<'a, K: ColumnType> BlockRef<'a, K> {
+impl<K: ColumnType> BlockRef<'_, K> {
     fn row_count(&self) -> usize {
         match self {
             BlockRef::Borrowed(block) => block.row_count(),
