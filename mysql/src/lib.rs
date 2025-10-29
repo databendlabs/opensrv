@@ -526,12 +526,17 @@ where
                     return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
                 }
 
-                if let Some(Ok(db)) = handshake.db.as_ref().map(|x| std::str::from_utf8(x)) {
-                    let w = InitWriter {
-                        client_capabilities: self.client_capabilities,
-                        writer: &mut self.writer,
-                    };
-                    self.shim.on_init(db, w).await?;
+                let mut needs_default_ok = true;
+
+                if let Some(db_bytes) = handshake.db.as_ref() {
+                    if let Ok(db) = std::str::from_utf8(db_bytes) {
+                        let w = InitWriter {
+                            client_capabilities: self.client_capabilities,
+                            writer: &mut self.writer,
+                        };
+                        self.shim.on_init(db, w).await?;
+                        needs_default_ok = false;
+                    }
                 } else if self.reject_connection_on_dbname_absence {
                     writers::write_err(
                         ErrorKind::ER_DATABASE_NAME,
@@ -547,12 +552,14 @@ where
                     .into());
                 }
 
-                writers::write_ok_packet(
-                    &mut self.writer,
-                    self.client_capabilities,
-                    OkResponse::default(),
-                )
-                .await?;
+                if needs_default_ok {
+                    writers::write_ok_packet(
+                        &mut self.writer,
+                        self.client_capabilities,
+                        OkResponse::default(),
+                    )
+                    .await?;
+                }
             }
 
             self.writer.flush_all().await?;

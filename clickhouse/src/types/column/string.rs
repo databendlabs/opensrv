@@ -68,14 +68,14 @@ impl ColumnFrom for Vec<String> {
     }
 }
 
-impl ColumnFrom for Vec<&str> {
+impl<'a> ColumnFrom for Vec<&'a str> {
     fn column_from<W: ColumnWrapper>(source: Self) -> W::Wrapper {
         let data: Vec<_> = source.iter().map(ToString::to_string).collect();
         W::wrap(StringColumnData { pool: data.into() })
     }
 }
 
-impl ColumnFrom for Vec<&[u8]> {
+impl<'a> ColumnFrom for Vec<&'a [u8]> {
     fn column_from<W: ColumnWrapper>(data: Self) -> W::Wrapper {
         W::wrap(StringColumnData { pool: data.into() })
     }
@@ -109,9 +109,9 @@ impl ColumnFrom for Vec<Vec<String>> {
     }
 }
 
-impl ColumnFrom for Vec<Vec<&str>> {
+impl<'a> ColumnFrom for Vec<Vec<&'a str>> {
     fn column_from<W: ColumnWrapper>(source: Self) -> <W as ColumnWrapper>::Wrapper {
-        make_array_of_array::<W, &str>(source)
+        make_array_of_array::<W, _>(source)
     }
 }
 
@@ -145,9 +145,9 @@ impl ColumnFrom for Vec<Option<Vec<u8>>> {
     }
 }
 
-impl ColumnFrom for Vec<Option<&str>> {
+impl<'a> ColumnFrom for Vec<Option<&'a str>> {
     fn column_from<W: ColumnWrapper>(source: Self) -> W::Wrapper {
-        make_opt_column::<W, &str>(source)
+        make_opt_column::<W, _>(source)
     }
 }
 
@@ -245,5 +245,26 @@ impl<K: ColumnType> ColumnData for StringAdapter<K> {
 
     fn clone_instance(&self) -> BoxColumnData {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_vec_of_str_refs_with_scoped_lifetime() {
+        let owned = vec!["alpha".to_string(), "beta".to_string()];
+        let refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        let column = Vec::column_from::<ArcColumnWrapper>(refs);
+        assert_eq!(column.len(), 2);
+    }
+
+    #[test]
+    fn converts_vec_of_byte_refs_with_scoped_lifetime() {
+        let owned = vec![b"gamma".to_vec(), b"delta".to_vec()];
+        let refs: Vec<&[u8]> = owned.iter().map(|b| b.as_slice()).collect();
+        let column = Vec::column_from::<ArcColumnWrapper>(refs);
+        assert_eq!(column.len(), 2);
     }
 }

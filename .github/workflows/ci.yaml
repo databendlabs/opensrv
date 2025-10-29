@@ -3,7 +3,11 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
   schedule:
     - cron: '25 4 * * *'
 
@@ -54,10 +58,10 @@ jobs:
       - name: Install mysql-client
         if: ${{ contains(matrix.os, 'macos') }}
         run: brew install mysql@8.4
-      - run: cargo build
+      - run: cargo build --workspace
       - run: |
           export PATH="/opt/homebrew/opt/mysql@8.4/bin:$PATH"
-          cargo test --lib --bins --tests -- --include-ignored
+          cargo test --workspace --all-features
 
   pass:
     name: All tests passed
