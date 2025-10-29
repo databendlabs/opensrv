@@ -281,8 +281,37 @@ impl AsyncMysqlShim<BufWriter<OwnedWriteHalf>> for InitCountingShim {
     ) -> Result<(), Self::Error> {
         if query.eq_ignore_ascii_case("SELECT @@socket")
             || query.eq_ignore_ascii_case("SELECT @@wait_timeout")
+            || query.eq_ignore_ascii_case("SELECT @@max_allowed_packet")
         {
             results.completed(OkResponse::default()).await
+        } else if query.eq_ignore_ascii_case("SELECT @@max_allowed_packet,@@wait_timeout,@@socket")
+        {
+            let columns = [
+                Column {
+                    table: String::new(),
+                    column: "@@max_allowed_packet".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                    colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                },
+                Column {
+                    table: String::new(),
+                    column: "@@wait_timeout".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                    colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                },
+                Column {
+                    table: String::new(),
+                    column: "@@socket".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING,
+                    colflags: myc::constants::ColumnFlags::empty(),
+                },
+            ];
+            let mut row_writer = results.start(&columns).await?;
+            row_writer.write_col(67108864u32)?;
+            row_writer.write_col(28800u32)?;
+            row_writer.write_col(None::<String>)?;
+            row_writer.end_row().await?;
+            row_writer.finish().await
         } else {
             Err(io::Error::new(
                 io::ErrorKind::Unsupported,
