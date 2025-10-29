@@ -18,11 +18,31 @@ use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::myc::constants::{CapabilityFlags, StatusFlags};
 use crate::myc::io::WriteMysqlExt;
-//use crate::packet::PacketWriter;
 use crate::packet_writer::PacketWriter;
-use crate::{Column, ErrorKind, OkResponse};
+use crate::{Column, ColumnFlags, ColumnType, ErrorKind, OkResponse};
 
 const BIN_GENERAL_CI: u16 = 0x3f;
+
+fn column_charset(column: &Column) -> u16 {
+    use crate::myc::constants::UTF8_GENERAL_CI;
+
+    if column
+        .colflags
+        .intersects(ColumnFlags::BINARY_FLAG | ColumnFlags::BLOB_FLAG)
+        || matches!(
+            column.coltype,
+            ColumnType::MYSQL_TYPE_TINY_BLOB
+                | ColumnType::MYSQL_TYPE_BLOB
+                | ColumnType::MYSQL_TYPE_MEDIUM_BLOB
+                | ColumnType::MYSQL_TYPE_LONG_BLOB
+                | ColumnType::MYSQL_TYPE_GEOMETRY
+        )
+    {
+        BIN_GENERAL_CI
+    } else {
+        UTF8_GENERAL_CI
+    }
+}
 
 pub(crate) async fn write_eof_packet<W: AsyncWrite + Unpin>(
     w: &mut PacketWriter<W>,
@@ -36,6 +56,7 @@ pub(crate) async fn write_eof_packet<W: AsyncWrite + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Column, ColumnFlags, ColumnType};
     use mysql_common::constants::CapabilityFlags;
     use mysql_common::io::ParseBuf;
     use mysql_common::packets::{OkPacket, OkPacketDeserializer, ResultSetTerminator};
@@ -119,6 +140,56 @@ mod tests {
         idx += 2;
 
         (idx, status, warnings)
+    }
+
+    #[test]
+    fn column_charset_defaults_to_utf8() {
+        use crate::myc::constants::UTF8_GENERAL_CI;
+
+        let column = Column {
+            table: "t".into(),
+            column: "c".into(),
+            coltype: ColumnType::MYSQL_TYPE_VAR_STRING,
+            colflags: ColumnFlags::empty(),
+        };
+
+        assert_eq!(column_charset(&column), UTF8_GENERAL_CI);
+    }
+
+    #[test]
+    fn column_charset_uses_binary_when_flagged() {
+        let column = Column {
+            table: "t".into(),
+            column: "c".into(),
+            coltype: ColumnType::MYSQL_TYPE_STRING,
+            colflags: ColumnFlags::BINARY_FLAG,
+        };
+
+        assert_eq!(column_charset(&column), BIN_GENERAL_CI);
+    }
+
+    #[test]
+    fn column_charset_handles_blob_types() {
+        let column = Column {
+            table: "t".into(),
+            column: "c".into(),
+            coltype: ColumnType::MYSQL_TYPE_BLOB,
+            colflags: ColumnFlags::empty(),
+        };
+
+        assert_eq!(column_charset(&column), BIN_GENERAL_CI);
+    }
+
+    #[test]
+    fn column_charset_respects_blob_flag() {
+        let column = Column {
+            table: "t".into(),
+            column: "c".into(),
+            coltype: ColumnType::MYSQL_TYPE_VAR_STRING,
+            colflags: ColumnFlags::BLOB_FLAG,
+        };
+
+        assert_eq!(column_charset(&column), BIN_GENERAL_CI);
     }
 
     #[tokio::test]
@@ -292,7 +363,7 @@ where
         w.write_lenenc_str(c.column.as_bytes())?;
         w.write_lenenc_str(b"")?;
         w.write_lenenc_int(0xC)?;
-        w.write_u16::<LittleEndian>(BIN_GENERAL_CI)?;
+        w.write_u16::<LittleEndian>(column_charset(c))?;
         w.write_u32::<LittleEndian>(1024)?;
         w.write_u8(c.coltype as u8)?;
         w.write_u16::<LittleEndian>(c.colflags.bits())?;
