@@ -276,7 +276,7 @@ impl<'a> Iterator for StringIterator<'a> {
 
 impl FusedIterator for StringIterator<'_> {}
 
-impl<'a> DecimalIterator<'a> {
+impl DecimalIterator<'_> {
     #[inline(always)]
     unsafe fn next_unchecked_<T>(&mut self) -> Decimal
     where
@@ -313,7 +313,7 @@ impl<'a> DecimalIterator<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for DecimalIterator<'a> {
+impl ExactSizeIterator for DecimalIterator<'_> {
     #[inline(always)]
     fn len(&self) -> usize {
         let size = match self.nobits {
@@ -328,7 +328,7 @@ iterator! { DecimalIterator: Decimal }
 
 iterator! { Ipv4Iterator: Ipv4Addr }
 
-impl<'a> Ipv4Iterator<'a> {
+impl Ipv4Iterator<'_> {
     #[inline(always)]
     unsafe fn next_unchecked(&mut self) -> Ipv4Addr {
         let v = slice::from_raw_parts(self.ptr, 4);
@@ -348,7 +348,7 @@ impl<'a> Ipv4Iterator<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for Ipv4Iterator<'a> {
+impl ExactSizeIterator for Ipv4Iterator<'_> {
     #[inline(always)]
     fn len(&self) -> usize {
         let size = 4;
@@ -358,7 +358,7 @@ impl<'a> ExactSizeIterator for Ipv4Iterator<'a> {
 
 iterator! { Ipv6Iterator: Ipv6Addr }
 
-impl<'a> Ipv6Iterator<'a> {
+impl Ipv6Iterator<'_> {
     #[inline(always)]
     unsafe fn next_unchecked(&mut self) -> Ipv6Addr {
         let v = slice::from_raw_parts(self.ptr, 16);
@@ -377,7 +377,7 @@ impl<'a> Ipv6Iterator<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for Ipv6Iterator<'a> {
+impl ExactSizeIterator for Ipv6Iterator<'_> {
     #[inline(always)]
     fn len(&self) -> usize {
         let size = 16;
@@ -387,7 +387,7 @@ impl<'a> ExactSizeIterator for Ipv6Iterator<'a> {
 
 iterator! { UuidIterator: uuid::Uuid }
 
-impl<'a> UuidIterator<'a> {
+impl UuidIterator<'_> {
     #[inline(always)]
     unsafe fn next_unchecked(&mut self) -> uuid::Uuid {
         let v = slice::from_raw_parts(self.ptr, 16);
@@ -408,7 +408,7 @@ impl<'a> UuidIterator<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for UuidIterator<'a> {
+impl ExactSizeIterator for UuidIterator<'_> {
     #[inline(always)]
     fn len(&self) -> usize {
         let size = 16;
@@ -416,7 +416,7 @@ impl<'a> ExactSizeIterator for UuidIterator<'a> {
     }
 }
 
-impl<'a> DateIterator<'a> {
+impl DateIterator<'_> {
     #[inline(always)]
     unsafe fn next_unchecked(&mut self) -> NaiveDate {
         let current_value = *self.ptr;
@@ -435,7 +435,7 @@ impl<'a> DateIterator<'a> {
     }
 }
 
-impl<'a> DateTimeIterator<'a> {
+impl DateTimeIterator<'_> {
     #[inline(always)]
     unsafe fn next_unchecked(&mut self) -> DateTime<Tz> {
         match &mut self.inner {
@@ -479,7 +479,7 @@ impl ExactSizeIterator for DateTimeIterator<'_> {
 
 iterator! { DateIterator: NaiveDate }
 
-impl<'a> Iterator for DateTimeIterator<'a> {
+impl Iterator for DateTimeIterator<'_> {
     type Item = DateTime<Tz>;
 
     #[inline]
@@ -518,7 +518,7 @@ impl<'a> Iterator for DateTimeIterator<'a> {
     }
 }
 
-impl<'a, I> ExactSizeIterator for NullableIterator<'a, I>
+impl<I> ExactSizeIterator for NullableIterator<'_, I>
 where
     I: Iterator,
 {
@@ -529,14 +529,14 @@ where
     }
 }
 
-impl<'a, I> Iterator for NullableIterator<'a, I>
+impl<I> Iterator for NullableIterator<'_, I>
 where
     I: Iterator,
 {
     type Item = Option<I::Item>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
+        if std::ptr::eq(self.ptr, self.end) {
             return None;
         }
 
@@ -561,16 +561,16 @@ where
     }
 }
 
-impl<'a, I: Iterator> FusedIterator for NullableIterator<'a, I> {}
+impl<I: Iterator> FusedIterator for NullableIterator<'_, I> {}
 
-impl<'a, I: Iterator> ExactSizeIterator for ArrayIterator<'a, I> {
+impl<I: Iterator> ExactSizeIterator for ArrayIterator<'_, I> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.size - self.index
     }
 }
 
-impl<'a, I: Iterator> Iterator for ArrayIterator<'a, I> {
+impl<I: Iterator> Iterator for ArrayIterator<'_, I> {
     type Item = Vec<I::Item>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -610,7 +610,7 @@ impl<'a, I: Iterator> Iterator for ArrayIterator<'a, I> {
     }
 }
 
-impl<'a, I: Iterator> FusedIterator for ArrayIterator<'a, I> {}
+impl<I: Iterator> FusedIterator for ArrayIterator<'_, I> {}
 
 impl<'a> Iterable<'a, Simple> for Ipv4Addr {
     type Iter = Ipv4Iterator<'a>;

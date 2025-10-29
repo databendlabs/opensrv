@@ -16,6 +16,8 @@ use std::error::Error;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -23,7 +25,7 @@ use mysql_async::prelude::*;
 use mysql_async::Opts;
 use mysql_common as myc;
 use opensrv_mysql::{
-    AsyncMysqlIntermediary, AsyncMysqlShim, Column, ErrorKind, OkResponse, ParamParser,
+    AsyncMysqlIntermediary, AsyncMysqlShim, Column, ErrorKind, InitWriter, OkResponse, ParamParser,
     QueryResultWriter, StatementMetaWriter, U24_MAX,
 };
 use tokio::io::BufWriter;
@@ -95,6 +97,14 @@ where
             (self.on_q)(query, results).await
         }
     }
+
+    async fn on_init<'a>(
+        &'a mut self,
+        _schema: &'a str,
+        writer: InitWriter<'a, BufWriter<OwnedWriteHalf>>,
+    ) -> Result<(), Self::Error> {
+        writer.ok().await
+    }
 }
 
 impl<Q, P, E> TestingShim<Q, P, E>
@@ -143,8 +153,22 @@ where
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static + Send,
         C: FnOnce(mysql_async::Conn) -> F + Send + Sync + 'static,
     {
+        self.test_with_opts(
+            |port| Opts::from_url(&format!("mysql://127.0.0.1:{}", port)).unwrap(),
+            c,
+        )
+        .await;
+    }
+
+    async fn test_with_opts<C, F, O>(self, opts: O, c: C)
+    where
+        F: Future<Output = Result<(), Box<dyn Error>>> + 'static + Send,
+        C: FnOnce(mysql_async::Conn) -> F + Send + Sync + 'static,
+        O: FnOnce(u16) -> Opts + Send + 'static,
+    {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
+        let opts = opts(port);
 
         let listen = tokio::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
@@ -154,10 +178,7 @@ where
             AsyncMysqlIntermediary::run_on(self, r, w).await.unwrap();
         });
 
-        let conn =
-            mysql_async::Conn::new(Opts::from_url(&format!("mysql://127.0.0.1:{}", port)).unwrap())
-                .await
-                .unwrap();
+        let conn = mysql_async::Conn::new(opts).await.unwrap();
         c(conn).await.unwrap();
 
         let (r1,) = tokio::join!(listen);
@@ -189,6 +210,97 @@ async fn it_pings() {
         Ok(())
     })
     .await;
+}
+
+struct InitCountingShim {
+    on_init_called: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl AsyncMysqlShim<BufWriter<OwnedWriteHalf>> for InitCountingShim {
+    type Error = io::Error;
+
+    async fn on_prepare<'a>(
+        &'a mut self,
+        _query: &'a str,
+        _info: StatementMetaWriter<'a, BufWriter<OwnedWriteHalf>>,
+    ) -> Result<(), Self::Error> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "prepare not supported in test shim",
+        ))
+    }
+
+    async fn on_execute<'a>(
+        &'a mut self,
+        _id: u32,
+        _params: ParamParser<'a>,
+        _results: QueryResultWriter<'a, BufWriter<OwnedWriteHalf>>,
+    ) -> Result<(), Self::Error> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "execute not supported in test shim",
+        ))
+    }
+
+    async fn on_close<'a>(&'a mut self, _stmt: u32) {}
+
+    async fn on_query<'a>(
+        &'a mut self,
+        query: &'a str,
+        results: QueryResultWriter<'a, BufWriter<OwnedWriteHalf>>,
+    ) -> Result<(), Self::Error> {
+        if query.eq_ignore_ascii_case("SELECT @@socket")
+            || query.eq_ignore_ascii_case("SELECT @@wait_timeout")
+        {
+            results.completed(OkResponse::default()).await
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("unexpected query: {query}"),
+            ))
+        }
+    }
+
+    async fn on_init<'a>(
+        &'a mut self,
+        _schema: &'a str,
+        writer: InitWriter<'a, BufWriter<OwnedWriteHalf>>,
+    ) -> Result<(), Self::Error> {
+        self.on_init_called.store(true, Ordering::SeqCst);
+        writer.ok().await
+    }
+}
+
+#[tokio::test]
+async fn handshake_with_initial_database_relies_on_backend_ack() {
+    let on_init_called = Arc::new(AtomicBool::new(false));
+    let shim = InitCountingShim {
+        on_init_called: on_init_called.clone(),
+    };
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+
+        let (r, w) = socket.into_split();
+        let w = BufWriter::with_capacity(100 * 1024, w);
+        AsyncMysqlIntermediary::run_on(shim, r, w).await.unwrap();
+    });
+
+    let opts = Opts::from_url(&format!("mysql://127.0.0.1:{}/initial_db", port)).unwrap();
+    let mut conn = mysql_async::Conn::new(opts).await.unwrap();
+    conn.ping().await.unwrap();
+    conn.disconnect().await.unwrap();
+
+    server.await.unwrap();
+
+    assert!(
+        on_init_called.load(Ordering::SeqCst),
+        "backend on_init was not invoked"
+    );
 }
 
 #[tokio::test]
