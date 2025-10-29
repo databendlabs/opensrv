@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io;
-
 use std::io::Error;
 use std::io::Result;
 
@@ -143,10 +141,10 @@ impl Unmarshal<char> for char {
         let bits = u32::from_le_bytes(scratch.try_into().unwrap());
         match char::from_u32(bits) {
             Some(c) => Ok(c),
-            None => Err(Error::new(
-                io::ErrorKind::Other,
-                format!("try unmarshal u32 to char failed: {}", bits),
-            )),
+            None => Err(Error::other(format!(
+                "try unmarshal u32 to char failed: {}",
+                bits
+            ))),
         }
     }
 }
