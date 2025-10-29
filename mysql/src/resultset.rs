@@ -145,7 +145,12 @@ impl<'a, W: AsyncWrite + Unpin> QueryResultWriter<'a, W> {
         }
         match self.last_end.take() {
             None => Ok(()),
-            Some(Finalizer::Ok(ok_packet)) => {
+            Some(Finalizer::Ok(mut ok_packet)) => {
+                if more_exists {
+                    ok_packet
+                        .status_flags
+                        .set(StatusFlags::SERVER_MORE_RESULTS_EXISTS, true);
+                }
                 writers::write_ok_packet(self.writer, self.client_capabilities, ok_packet).await
             }
             Some(Finalizer::Eof) => writers::write_eof_packet(self.writer, status).await,
@@ -379,7 +384,6 @@ impl<'a, W: AsyncWrite + Unpin + 'a> RowWriter<'a, W> {
 
         if complete {
             if self.columns.is_empty() {
-                // response to no column query is always an OK packet
                 let resp = OkResponse {
                     info: extra_info.to_string(),
                     ..Default::default()
@@ -389,10 +393,10 @@ impl<'a, W: AsyncWrite + Unpin + 'a> RowWriter<'a, W> {
                 .client_capabilities
                 .contains(CapabilityFlags::CLIENT_DEPRECATE_EOF)
             {
-                // response to no column query is always an OK packet
+                // With CLIENT_DEPRECATE_EOF the server must terminate the resultset with an OK packet (header 0xFE).
                 let resp = OkResponse {
-                    info: extra_info.to_string(),
                     header: 0xfe,
+                    info: extra_info.to_string(),
                     ..Default::default()
                 };
                 self.result.as_mut().unwrap().last_end = Some(Finalizer::Ok(resp));
