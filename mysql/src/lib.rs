@@ -129,7 +129,7 @@ pub trait AsyncMysqlShim<W: Send> {
     }
 
     /// get auth plugin
-    async fn auth_plugin_for_username(&self, _user: &[u8]) -> &str {
+    async fn auth_plugin_for_username(&self, _user: &[u8]) -> &'static str {
         MYSQL_NATIVE_PASSWORD
     }
 

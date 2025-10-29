@@ -77,7 +77,7 @@ impl<'a> Iterator for Params<'a> {
     type Item = ParamValue<'a>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.nullmap.is_none() {
-            let nullmap_len = (self.params as usize + 7) / 8;
+            let nullmap_len = (self.params as usize).div_ceil(8);
             let (nullmap, rest) = self.input.split_at(nullmap_len);
             self.nullmap = Some(nullmap);
             self.input = rest;
@@ -110,7 +110,7 @@ impl<'a> Iterator for Params<'a> {
             if byte >= nullmap.len() {
                 return None;
             }
-            if (nullmap[byte] & 1u8 << (self.col % 8)) != 0 {
+            if (nullmap[byte] & (1u8 << (self.col % 8))) != 0 {
                 self.col += 1;
                 return Some(ParamValue {
                     value: Value::null(),

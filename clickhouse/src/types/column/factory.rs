@@ -224,10 +224,7 @@ pub fn parse_fixed_string(source: &str) -> Option<usize> {
     }
 
     let inner_size = &source[12..source.len() - 1];
-    match inner_size.parse::<usize>() {
-        Err(_) => None,
-        Ok(value) => Some(value),
-    }
+    inner_size.parse::<usize>().ok()
 }
 
 pub fn parse_nullable_type(source: &str) -> Option<&str> {

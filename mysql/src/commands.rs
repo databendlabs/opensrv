@@ -38,7 +38,7 @@ pub fn client_handshake(i: &[u8], after_tls: bool) -> nom::IResult<&[u8], Client
     if capabilities.contains(CapabilityFlags::CLIENT_PROTOCOL_41) {
         // HandshakeResponse41
         let (i, cap2) = nom::number::complete::le_u16(i)?;
-        let cap = (cap2 as u32) << 16 | cap as u32;
+        let cap = ((cap2 as u32) << 16) | (cap as u32);
 
         capabilities = CapabilityFlags::from_bits_truncate(cap);
 
@@ -116,7 +116,7 @@ pub fn client_handshake(i: &[u8], after_tls: bool) -> nom::IResult<&[u8], Client
         // HandshakeResponse320
         let (i, maxps1) = nom::number::complete::le_u16(i)?;
         let (i, maxps2) = nom::number::complete::le_u8(i)?;
-        let maxps = (maxps2 as u32) << 16 | maxps1 as u32;
+        let maxps = ((maxps2 as u32) << 16) | (maxps1 as u32);
         let (i, username) = nom::bytes::complete::take_until(&b"\0"[..])(i)?;
         let (i, _) = nom::bytes::complete::tag(b"\0")(i)?;
 

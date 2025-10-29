@@ -588,10 +588,7 @@ impl ToMysqlValue for myc::value::Value {
             }
             myc::value::Value::Time(neg, d, h, m, s, us) => {
                 if neg {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "negative times not yet supported",
-                    ));
+                    return Err(io::Error::other("negative times not yet supported"));
                 }
                 (chrono::Duration::days(i64::from(d))
                     + chrono::Duration::hours(i64::from(h))
@@ -655,10 +652,7 @@ impl ToMysqlValue for myc::value::Value {
             }
             myc::value::Value::Time(neg, d, h, m, s, us) => {
                 if neg {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "negative times not yet supported",
-                    ));
+                    return Err(io::Error::other("negative times not yet supported"));
                 }
                 (chrono::Duration::days(i64::from(d))
                     + chrono::Duration::hours(i64::from(h))

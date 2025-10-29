@@ -59,7 +59,7 @@ impl fmt::Debug for OptionsSource {
 
 #[allow(dead_code)]
 impl OptionsSource {
-    pub(crate) fn get(&self) -> Result<Cow<Options>> {
+    pub(crate) fn get(&self) -> Result<Cow<'_, Options>> {
         let mut state = self.state.lock().unwrap();
         loop {
             let new_state = match &*state {

@@ -35,7 +35,7 @@ pub(crate) struct CompressedReader<'a, R> {
     cursor: io::Cursor<Vec<u8>>,
 }
 
-pub(crate) fn make<R>(reader: &mut R) -> CompressedReader<R> {
+pub(crate) fn make<R>(reader: &mut R) -> CompressedReader<'_, R> {
     CompressedReader {
         reader,
         cursor: io::Cursor::new(Vec::new()),

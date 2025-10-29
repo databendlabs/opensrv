@@ -536,7 +536,7 @@ where
     type Item = Option<I::Item>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
+        if std::ptr::eq(self.ptr, self.end) {
             return None;
         }
 

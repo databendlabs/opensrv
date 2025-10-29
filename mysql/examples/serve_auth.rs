@@ -98,7 +98,7 @@ impl<W: AsyncWrite + Send + Unpin> AsyncMysqlShim<W> for Backend {
         "mysql_native_password"
     }
 
-    async fn auth_plugin_for_username(&self, _user: &[u8]) -> &str {
+    async fn auth_plugin_for_username(&self, _user: &[u8]) -> &'static str {
         "mysql_native_password"
     }
 
