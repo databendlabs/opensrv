@@ -65,7 +65,7 @@ pub enum ValueRef<'a> {
     Tuple(Arc<Vec<ValueRef<'a>>>),
 }
 
-impl<'a> PartialEq for ValueRef<'a> {
+impl PartialEq for ValueRef<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (ValueRef::UInt8(a), ValueRef::UInt8(b)) => *a == *b,
@@ -104,7 +104,7 @@ impl<'a> PartialEq for ValueRef<'a> {
     }
 }
 
-impl<'a> fmt::Display for ValueRef<'a> {
+impl fmt::Display for ValueRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ValueRef::UInt8(v) => fmt::Display::fmt(v, f),

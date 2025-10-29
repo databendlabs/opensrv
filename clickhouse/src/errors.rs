@@ -171,7 +171,7 @@ impl From<Error> for io::Error {
     fn from(err: Error) -> Self {
         match err {
             Error::IO(error) => error,
-            e => io::Error::new(io::ErrorKind::Other, e.to_string()),
+            e => io::Error::other(e.to_string()),
         }
     }
 }

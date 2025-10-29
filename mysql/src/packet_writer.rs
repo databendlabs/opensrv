@@ -22,7 +22,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 /// The writer of mysql packet.
 /// - behaves as a sync writer, while build the packet
-///    so that trivial async writes could be avoided
+///   so that trivial async writes could be avoided
 /// - behaves like a async writer, while writing data to the output stream
 pub struct PacketWriter<W> {
     packet_builder: PacketBuilder,

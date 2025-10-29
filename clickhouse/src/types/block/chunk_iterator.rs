@@ -23,7 +23,7 @@ pub struct ChunkIterator<'a, K: ColumnType> {
     block: &'a Block<K>,
 }
 
-impl<'a, K: ColumnType> Iterator for ChunkIterator<'a, K> {
+impl<K: ColumnType> Iterator for ChunkIterator<'_, K> {
     type Item = Block;
 
     fn next(&mut self) -> Option<Block> {
@@ -59,7 +59,7 @@ impl<'a, K: ColumnType> Iterator for ChunkIterator<'a, K> {
     }
 }
 
-impl<'a, K: ColumnType> ChunkIterator<'a, K> {
+impl<K: ColumnType> ChunkIterator<'_, K> {
     pub fn new(size: usize, block: &Block<K>) -> ChunkIterator<K> {
         ChunkIterator {
             position: 0,
