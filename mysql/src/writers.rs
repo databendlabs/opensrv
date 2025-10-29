@@ -38,9 +38,21 @@ fn column_charset(column: &Column) -> u16 {
                 | ColumnType::MYSQL_TYPE_GEOMETRY
         )
     {
-        BIN_GENERAL_CI
-    } else {
+        return BIN_GENERAL_CI;
+    }
+
+    if matches!(
+        column.coltype,
+        ColumnType::MYSQL_TYPE_STRING
+            | ColumnType::MYSQL_TYPE_VAR_STRING
+            | ColumnType::MYSQL_TYPE_VARCHAR
+            | ColumnType::MYSQL_TYPE_ENUM
+            | ColumnType::MYSQL_TYPE_SET
+            | ColumnType::MYSQL_TYPE_JSON
+    ) {
         UTF8_GENERAL_CI
+    } else {
+        BIN_GENERAL_CI
     }
 }
 
@@ -154,6 +166,18 @@ mod tests {
         };
 
         assert_eq!(column_charset(&column), UTF8_GENERAL_CI);
+    }
+
+    #[test]
+    fn column_charset_uses_binary_for_numeric_types() {
+        let column = Column {
+            table: "t".into(),
+            column: "c".into(),
+            coltype: ColumnType::MYSQL_TYPE_LONG,
+            colflags: ColumnFlags::empty(),
+        };
+
+        assert_eq!(column_charset(&column), BIN_GENERAL_CI);
     }
 
     #[test]
