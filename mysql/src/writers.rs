@@ -193,9 +193,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ok_packet_info_is_length_encoded_under_protocol_41() {
+    async fn ok_packet_info_is_length_encoded_with_session_track() {
         let info = "Read 1 rows, 1.00 B in 0.007 sec.";
-        let payload = extract_payload(info, CapabilityFlags::CLIENT_PROTOCOL_41).await;
+        let capabilities =
+            CapabilityFlags::CLIENT_PROTOCOL_41 | CapabilityFlags::CLIENT_SESSION_TRACK;
+        let payload = extract_payload(info, capabilities).await;
 
         let (mut idx, status, warnings) = consume_ok_packet_prefix(&payload);
         assert_eq!(status, 0);
@@ -213,7 +215,9 @@ mod tests {
     #[tokio::test]
     async fn ok_packet_info_uses_extended_length_prefix_when_needed() {
         let info = "x".repeat(300);
-        let payload = extract_payload(&info, CapabilityFlags::CLIENT_PROTOCOL_41).await;
+        let capabilities =
+            CapabilityFlags::CLIENT_PROTOCOL_41 | CapabilityFlags::CLIENT_SESSION_TRACK;
+        let payload = extract_payload(&info, capabilities).await;
 
         let (mut idx, status, warnings) = consume_ok_packet_prefix(&payload);
         assert_eq!(status, 0);
@@ -244,10 +248,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ok_packet_info_is_plain_string_without_session_track() {
+        let info = "Read 1 rows, 1.00 B in 0.007 sec.";
+        let payload = extract_payload(info, CapabilityFlags::CLIENT_PROTOCOL_41).await;
+
+        let (idx, status, warnings) = consume_ok_packet_prefix(&payload);
+        assert_eq!(status, 0);
+        assert_eq!(warnings, 0);
+
+        let encoded = &payload[idx..];
+        assert_eq!(encoded, info.as_bytes());
+    }
+
+    #[tokio::test]
     async fn ok_packet_with_deprecate_eof_parses_lenenc_info() {
         let info = "x".repeat(300);
-        let capabilities =
-            CapabilityFlags::CLIENT_PROTOCOL_41 | CapabilityFlags::CLIENT_DEPRECATE_EOF;
+        let capabilities = CapabilityFlags::CLIENT_PROTOCOL_41
+            | CapabilityFlags::CLIENT_DEPRECATE_EOF
+            | CapabilityFlags::CLIENT_SESSION_TRACK;
         let payload = extract_payload_with_header(&info, capabilities, 0xfe).await;
 
         let mut buf = ParseBuf(&payload);
@@ -275,15 +293,19 @@ pub(crate) async fn write_ok_packet<W: AsyncWrite + Unpin>(
         w.write_u16::<LittleEndian>(ok_packet.status_flags.bits())?;
     }
 
-    // MySQL 4.1+ protocol requires info to be length-encoded when present or when session tracking is enabled.
-    let send_info = !ok_packet.info.is_empty()
-        || client_capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK);
+    // Only session-tracking clients expect length-encoded info per protocol; otherwise emit raw text.
+    let has_session_track = client_capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK);
+    let send_info = !ok_packet.info.is_empty() || has_session_track;
     if send_info {
-        w.write_lenenc_str(ok_packet.info.as_bytes())?;
+        if has_session_track {
+            w.write_lenenc_str(ok_packet.info.as_bytes())?;
+        } else {
+            w.write_all(ok_packet.info.as_bytes())?;
+        }
     }
 
     // Session state info is optional and only sent if flag is set
-    if client_capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK)
+    if has_session_track
         && ok_packet
             .status_flags
             .contains(StatusFlags::SERVER_SESSION_STATE_CHANGED)
