@@ -89,8 +89,37 @@ where
     ) -> Result<(), Self::Error> {
         if query.eq_ignore_ascii_case("SELECT @@socket")
             || query.eq_ignore_ascii_case("SELECT @@wait_timeout")
+            || query.eq_ignore_ascii_case("SELECT @@max_allowed_packet")
         {
             results.completed(OkResponse::default()).await
+        } else if query.eq_ignore_ascii_case("SELECT @@max_allowed_packet,@@wait_timeout,@@socket")
+        {
+            let cols = [
+                Column {
+                    table: String::new(),
+                    column: "@@max_allowed_packet".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                    colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                },
+                Column {
+                    table: String::new(),
+                    column: "@@wait_timeout".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                    colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                },
+                Column {
+                    table: String::new(),
+                    column: "@@socket".to_owned(),
+                    coltype: myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING,
+                    colflags: myc::constants::ColumnFlags::empty(),
+                },
+            ];
+            let mut row_writer = results.start(&cols).await?;
+            row_writer.write_col(67108864u32)?;
+            row_writer.write_col(28800u32)?;
+            row_writer.write_col(None::<String>)?;
+            row_writer.end_row().await?;
+            row_writer.finish().await
         } else {
             (self.on_q)(query, results).await
         }
@@ -1023,6 +1052,74 @@ async fn large_packet() {
         assert_eq!(2, number_rows);
 
         result.drop_result().await?;
+        Ok(())
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn ok_packet_with_info_when_session_track_disabled() {
+    let info = "Query finished in 0.007 sec.".repeat(12);
+    TestingShim::new(
+        move |query, w| {
+            let info = info.clone();
+            async move {
+                match query.trim() {
+                    "SELECT @@max_allowed_packet,@@wait_timeout,@@socket" => {
+                        let cols = &[
+                            Column {
+                                table: String::new(),
+                                column: "@@max_allowed_packet".to_owned(),
+                                coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                                colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                            },
+                            Column {
+                                table: String::new(),
+                                column: "@@wait_timeout".to_owned(),
+                                coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                                colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                            },
+                            Column {
+                                table: String::new(),
+                                column: "@@socket".to_owned(),
+                                coltype: myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING,
+                                colflags: myc::constants::ColumnFlags::empty(),
+                            },
+                        ];
+
+                        let mut row_writer = w.start(cols).await?;
+                        row_writer.write_col(67108864u32)?;
+                        row_writer.write_col(28800u32)?;
+                        row_writer.write_col(None::<String>)?;
+                        row_writer.end_row().await?;
+                        row_writer.finish().await
+                    }
+                    "SELECT @@version_comment" => {
+                        let cols = &[Column {
+                            table: String::new(),
+                            column: "@@version_comment".to_owned(),
+                            coltype: myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING,
+                            colflags: myc::constants::ColumnFlags::empty(),
+                        }];
+
+                        let mut row_writer = w.start(cols).await?;
+                        row_writer
+                            .write_row(vec!["Databend (test)".to_string()])
+                            .await?;
+                        let query_writer = row_writer.finish_one_with_info(&info).await?;
+                        query_writer.no_more_results().await
+                    }
+                    other => panic!("unexpected query: {other}"),
+                }
+            }
+            .boxed()
+        },
+        |_| unreachable!(),
+        |_, _, _| unreachable!(),
+    )
+    .test(|mut db| async move {
+        let version: Option<String> = db.query_first("SELECT @@version_comment").await?;
+        assert_eq!(version.as_deref(), Some("Databend (test)"));
         Ok(())
     })
     .await;

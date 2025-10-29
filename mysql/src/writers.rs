@@ -33,6 +33,162 @@ pub(crate) async fn write_eof_packet<W: AsyncWrite + Unpin>(
     w.end_packet().await
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mysql_common::constants::CapabilityFlags;
+    use mysql_common::io::ParseBuf;
+    use mysql_common::packets::{OkPacket, OkPacketDeserializer, ResultSetTerminator};
+    use tokio::io::AsyncReadExt;
+
+    fn parse_lenenc_int(buf: &[u8]) -> (u64, usize) {
+        match buf[0] {
+            v @ 0x00..=0xfa => (v as u64, 1),
+            0xfc => {
+                let len = u16::from_le_bytes([buf[1], buf[2]]);
+                (len as u64, 3)
+            }
+            0xfd => {
+                let len = (buf[1] as u32) | ((buf[2] as u32) << 8) | ((buf[3] as u32) << 16);
+                (len as u64, 4)
+            }
+            0xfe => {
+                let len = u64::from_le_bytes([
+                    buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8],
+                ]);
+                (len, 9)
+            }
+            marker => panic!("unexpected length-encoded integer marker: {marker:#x}"),
+        }
+    }
+
+    async fn extract_payload_with_header(
+        info: &str,
+        capabilities: CapabilityFlags,
+        header: u8,
+    ) -> Vec<u8> {
+        let (mut client, server) = tokio::io::duplex(1024);
+        let mut writer = PacketWriter::new(server);
+
+        let ok_packet = OkResponse {
+            header,
+            info: info.to_string(),
+            ..Default::default()
+        };
+
+        write_ok_packet(&mut writer, capabilities, ok_packet)
+            .await
+            .expect("write_ok_packet succeeds");
+
+        let mut header = [0u8; 4];
+        client
+            .read_exact(&mut header)
+            .await
+            .expect("payload header available");
+        let payload_len =
+            (header[0] as usize) | ((header[1] as usize) << 8) | ((header[2] as usize) << 16);
+        let mut payload = vec![0u8; payload_len];
+        client
+            .read_exact(&mut payload)
+            .await
+            .expect("payload body available");
+        payload
+    }
+
+    async fn extract_payload(info: &str, capabilities: CapabilityFlags) -> Vec<u8> {
+        extract_payload_with_header(info, capabilities, 0x00).await
+    }
+
+    fn consume_ok_packet_prefix(payload: &[u8]) -> (usize, u16, u16) {
+        let mut idx = 0;
+        assert_eq!(payload[idx], 0x00);
+        idx += 1;
+
+        let (affected_rows, consumed) = parse_lenenc_int(&payload[idx..]);
+        assert_eq!(affected_rows, 0);
+        idx += consumed;
+
+        let (last_insert_id, consumed) = parse_lenenc_int(&payload[idx..]);
+        assert_eq!(last_insert_id, 0);
+        idx += consumed;
+
+        let status = u16::from_le_bytes([payload[idx], payload[idx + 1]]);
+        idx += 2;
+
+        let warnings = u16::from_le_bytes([payload[idx], payload[idx + 1]]);
+        idx += 2;
+
+        (idx, status, warnings)
+    }
+
+    #[tokio::test]
+    async fn ok_packet_info_is_length_encoded_under_protocol_41() {
+        let info = "Read 1 rows, 1.00 B in 0.007 sec.";
+        let payload = extract_payload(info, CapabilityFlags::CLIENT_PROTOCOL_41).await;
+
+        let (mut idx, status, warnings) = consume_ok_packet_prefix(&payload);
+        assert_eq!(status, 0);
+        assert_eq!(warnings, 0);
+
+        let (info_len, consumed) = parse_lenenc_int(&payload[idx..]);
+        assert_eq!(info_len as usize, info.len());
+        assert_eq!(payload[idx], info.len() as u8);
+        idx += consumed;
+
+        let encoded = &payload[idx..idx + info.len()];
+        assert_eq!(encoded, info.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn ok_packet_info_uses_extended_length_prefix_when_needed() {
+        let info = "x".repeat(300);
+        let payload = extract_payload(&info, CapabilityFlags::CLIENT_PROTOCOL_41).await;
+
+        let (mut idx, status, warnings) = consume_ok_packet_prefix(&payload);
+        assert_eq!(status, 0);
+        assert_eq!(warnings, 0);
+
+        let (info_len, consumed) = parse_lenenc_int(&payload[idx..]);
+        assert_eq!(consumed, 3, "expected 0xFC marker with two-byte length");
+        assert_eq!(payload[idx], 0xFC);
+        assert_eq!(info_len as usize, info.len());
+        idx += consumed;
+
+        let encoded = &payload[idx..idx + info.len()];
+        assert_eq!(encoded, info.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn ok_packet_skips_info_for_empty_string_without_session_track() {
+        let payload = extract_payload("", CapabilityFlags::CLIENT_PROTOCOL_41).await;
+
+        let (idx, status, warnings) = consume_ok_packet_prefix(&payload);
+        assert_eq!(status, 0);
+        assert_eq!(warnings, 0);
+        assert_eq!(
+            idx,
+            payload.len(),
+            "empty info without CLIENT_SESSION_TRACK should not emit length prefix"
+        );
+    }
+
+    #[tokio::test]
+    async fn ok_packet_with_deprecate_eof_parses_lenenc_info() {
+        let info = "x".repeat(300);
+        let capabilities =
+            CapabilityFlags::CLIENT_PROTOCOL_41 | CapabilityFlags::CLIENT_DEPRECATE_EOF;
+        let payload = extract_payload_with_header(&info, capabilities, 0xfe).await;
+
+        let mut buf = ParseBuf(&payload);
+        let ok_packet: OkPacket = buf
+            .parse::<OkPacketDeserializer<ResultSetTerminator>>(capabilities)
+            .expect("ResultSetTerminator packet to parse")
+            .into_inner();
+        assert_eq!(ok_packet.info_ref(), Some(info.as_bytes()));
+        assert_eq!(ok_packet.status_flags(), StatusFlags::empty());
+    }
+}
+
 pub(crate) async fn write_ok_packet<W: AsyncWrite + Unpin>(
     w: &mut PacketWriter<W>,
     client_capabilities: CapabilityFlags,
@@ -43,21 +199,25 @@ pub(crate) async fn write_ok_packet<W: AsyncWrite + Unpin>(
     w.write_lenenc_int(ok_packet.last_insert_id)?;
     if client_capabilities.contains(CapabilityFlags::CLIENT_PROTOCOL_41) {
         w.write_u16::<LittleEndian>(ok_packet.status_flags.bits())?;
-        w.write_all(&[0x00, 0x00])?; // no warnings
+        w.write_u16::<LittleEndian>(ok_packet.warnings)?;
     } else if client_capabilities.contains(CapabilityFlags::CLIENT_TRANSACTIONS) {
         w.write_u16::<LittleEndian>(ok_packet.status_flags.bits())?;
     }
 
-    if client_capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK) {
+    // MySQL 4.1+ protocol requires info to be length-encoded when present or when session tracking is enabled.
+    let send_info = !ok_packet.info.is_empty()
+        || client_capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK);
+    if send_info {
         w.write_lenenc_str(ok_packet.info.as_bytes())?;
-        if ok_packet
+    }
+
+    // Session state info is optional and only sent if flag is set
+    if client_capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK)
+        && ok_packet
             .status_flags
             .contains(StatusFlags::SERVER_SESSION_STATE_CHANGED)
-        {
-            w.write_lenenc_str(ok_packet.session_state_info.as_bytes())?;
-        }
-    } else {
-        w.write_all(ok_packet.info.as_bytes())?;
+    {
+        w.write_lenenc_str(ok_packet.session_state_info.as_bytes())?;
     }
     w.end_packet().await
 }

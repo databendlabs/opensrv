@@ -86,9 +86,7 @@ mod tls {
         Ok(config)
     }
 
-    pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
-        let listener = TcpListener::bind("0.0.0.0:3306").await?;
-
+    pub async fn serve_on(listener: TcpListener) -> Result<(), Box<dyn std::error::Error>> {
         loop {
             let (stream, _) = listener.accept().await?;
             let (mut r, mut w) = stream.into_split();
@@ -128,9 +126,13 @@ async fn test_secure() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     use std::os::unix::process::ExitStatusExt;
+    use tokio::net::TcpListener;
 
-    tokio::spawn(async {
-        let _ = tls::start_server().await;
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+
+    tokio::spawn(async move {
+        let _ = tls::serve_on(listener).await;
     });
 
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -141,8 +143,26 @@ async fn test_secure() -> Result<(), Box<dyn std::error::Error>> {
         .spawn()?;
 
     let echo_output = echo_output.stdout.take().unwrap();
-    let mut mysql_ssl = Command::new("mysql")
-        .args(["-h", "127.0.0.1", "--table", "--ssl-mode=REQUIRED"])
+
+    let supports_ssl_mode = Command::new("mysql")
+        .arg("--help")
+        .output()
+        .map(|output| {
+            let help = String::from_utf8_lossy(&output.stdout);
+            help.contains("--ssl-mode")
+        })
+        .unwrap_or(true);
+
+    let mut mysql_cmd = Command::new("mysql");
+    mysql_cmd.args(["-h", "127.0.0.1", "--table"]);
+    mysql_cmd.args(["-P", &port.to_string()]);
+    if supports_ssl_mode {
+        mysql_cmd.arg("--ssl-mode=REQUIRED");
+    } else {
+        mysql_cmd.arg("--ssl");
+    }
+
+    let mut mysql_ssl = mysql_cmd
         .stdin(echo_output)
         .stdout(Stdio::piped())
         .spawn()?;
