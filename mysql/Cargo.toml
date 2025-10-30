@@ -27,6 +27,7 @@ nom = "7.1.0"
 tokio = { version = "1.17.0", features = ["io-util", "io-std"] }
 tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring"] }
 pin-project-lite = { version = "0.2.9", optional = true }
+log = "0.4"
 
 [dev-dependencies]
 mysql = "=24.0.0"

@@ -30,6 +30,7 @@ use std::io::Write;
 use std::iter;
 
 use async_trait::async_trait;
+use log::info;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
 #[cfg(feature = "tls")]
@@ -821,6 +822,10 @@ where
                                 if let Some((var_name, raw_value)) =
                                     parse_set_session_variable(query)
                                 {
+                                    info!(
+                                        "opensrv: forwarding SET {} = {}",
+                                        var_name, raw_value
+                                    );
                                     let handled = match var_name.as_str() {
                                         "autocommit" => false,
                                         "sql_auto_is_null" => false,
