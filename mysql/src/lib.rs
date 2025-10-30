@@ -35,7 +35,9 @@ use tokio::io::AsyncWrite;
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 
-pub use crate::myc::constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags};
+pub use crate::myc::constants::{
+    CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags,
+};
 #[cfg(feature = "tls")]
 pub use crate::tls::{plain_run_with_options, secure_run_with_options};
 
@@ -76,6 +78,158 @@ pub struct Column {
     pub colflags: ColumnFlags,
 }
 
+fn starts_with_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    haystack
+        .get(0..needle.len())
+        .map(|prefix| prefix.eq_ignore_ascii_case(needle))
+        .unwrap_or(false)
+}
+
+fn strip_prefix_ignore_ascii_case<'a>(input: &'a str, prefix: &str) -> Option<&'a str> {
+    if starts_with_ignore_ascii_case(input, prefix) {
+        Some(&input[prefix.len()..])
+    } else {
+        None
+    }
+}
+
+fn parse_set_session_variable(query: &str) -> Option<(String, String)> {
+    let trimmed = query.trim();
+    if trimmed.len() < 3 {
+        return None;
+    }
+    let without_trailing = trimmed
+        .trim_end_matches(|c: char| c.is_whitespace() || c == ';')
+        .trim_end();
+
+    if without_trailing.len() < 3 || !without_trailing[..3].eq_ignore_ascii_case("set") {
+        return None;
+    }
+
+    let mut rest = without_trailing[3..].trim_start();
+
+    loop {
+        if let Some(after) = strip_prefix_ignore_ascii_case(rest, "session ") {
+            rest = after.trim_start();
+        } else if let Some(after) = strip_prefix_ignore_ascii_case(rest, "global ") {
+            rest = after.trim_start();
+        } else {
+            break;
+        }
+    }
+
+    if rest.starts_with("@@") {
+        rest = rest[2..].trim_start();
+    }
+
+    if let Some(after) = strip_prefix_ignore_ascii_case(rest, "session.") {
+        rest = after.trim_start();
+    } else if let Some(after) = strip_prefix_ignore_ascii_case(rest, "global.") {
+        rest = after.trim_start();
+    }
+
+    let eq_idx = rest.find('=')?;
+    let (lhs, rhs_with_eq) = rest.split_at(eq_idx);
+    let mut lhs_trim = lhs.trim();
+    if lhs_trim.is_empty() {
+        return None;
+    }
+    lhs_trim = lhs_trim.trim_end_matches(':').trim();
+    lhs_trim = lhs_trim.trim_matches('`').trim();
+    if lhs_trim.is_empty() {
+        return None;
+    }
+    let var_name = lhs_trim.to_ascii_lowercase();
+
+    let mut value = rhs_with_eq[1..].trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    if value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2 {
+        value = &value[1..value.len() - 1];
+    } else if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+        value = &value[1..value.len() - 1];
+    }
+
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    let value = if value.eq_ignore_ascii_case("default") {
+        "DEFAULT".to_string()
+    } else {
+        value.to_string()
+    };
+
+    Some((var_name, value))
+}
+
+fn parse_switch_value(value: &str, default: bool) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "on" | "true" => Some(true),
+        "0" | "off" | "false" => Some(false),
+        "default" => Some(default),
+        _ => None,
+    }
+}
+
+fn normalize_sql_select_limit(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.eq_ignore_ascii_case("default") {
+        Some("18446744073709551615".to_string())
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+#[cfg(test)]
+mod session_track_tests {
+    use super::{normalize_sql_select_limit, parse_set_session_variable, parse_switch_value};
+
+    #[test]
+    fn parses_set_variable_variants() {
+        assert_eq!(
+            parse_set_session_variable("SET autocommit=0"),
+            Some(("autocommit".to_string(), "0".to_string()))
+        );
+        assert_eq!(
+            parse_set_session_variable("set @@session.autocommit = ON "),
+            Some(("autocommit".to_string(), "ON".to_string()))
+        );
+        assert_eq!(
+            parse_set_session_variable("SET SQL_AUTO_IS_NULL = 0"),
+            Some(("sql_auto_is_null".to_string(), "0".to_string()))
+        );
+        assert_eq!(
+            parse_set_session_variable("set @@sql_select_limit=DEFAULT"),
+            Some(("sql_select_limit".to_string(), "DEFAULT".to_string()))
+        );
+    }
+
+    #[test]
+    fn parses_switch_values_with_defaults() {
+        assert_eq!(parse_switch_value("0", true), Some(false));
+        assert_eq!(parse_switch_value("ON", false), Some(true));
+        assert_eq!(parse_switch_value("DEFAULT", true), Some(true));
+        assert_eq!(parse_switch_value("DEFAULT", false), Some(false));
+        assert_eq!(parse_switch_value("foo", true), None);
+    }
+
+    #[test]
+    fn normalizes_sql_select_limit() {
+        assert_eq!(
+            normalize_sql_select_limit("DEFAULT"),
+            Some("18446744073709551615".to_string())
+        );
+        assert_eq!(normalize_sql_select_limit(" 100 "), Some("100".to_string()));
+    }
+}
+
 /// QueryStatusInfo represents the status of a query.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OkResponse {
@@ -91,8 +245,88 @@ pub struct OkResponse {
     pub warnings: u16,
     /// Extra infomation
     pub info: String,
+    /// session state change entries to emit when CLIENT_SESSION_TRACK is negotiated
+    pub session_state_changes: Vec<SessionStateChange>,
     /// session state change information
     pub session_state_info: String,
+}
+
+/// Represents a tracked session variable assignment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionStateVariable {
+    /// Variable name bytes.
+    pub name: Vec<u8>,
+    /// Variable value bytes.
+    pub value: Vec<u8>,
+}
+
+impl SessionStateVariable {
+    /// Construct a new session variable assignment.
+    pub fn new(name: impl Into<Vec<u8>>, value: impl Into<Vec<u8>>) -> Self {
+        SessionStateVariable {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+}
+
+/// Represents a single session state change entry used in OK packets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionStateChange {
+    /// One or more system variable assignments.
+    SystemVariables(Vec<SessionStateVariable>),
+    /// Default schema has changed.
+    Schema(Vec<u8>),
+    /// Session tracking toggled on/off.
+    StateChange(bool),
+    /// Global transaction identifiers.
+    Gtids(Vec<u8>),
+    /// Transaction characteristics.
+    TransactionCharacteristics(Vec<u8>),
+    /// Transaction state information.
+    TransactionState(Vec<u8>),
+    /// Raw payload for custom tracker types.
+    Raw {
+        /// Tracker kind as defined by the protocol.
+        kind: SessionStateType,
+        /// Already serialized payload for the tracker.
+        payload: Vec<u8>,
+    },
+}
+
+impl SessionStateChange {
+    /// Convenience constructor for a single system variable change.
+    pub fn system_variable(name: impl Into<Vec<u8>>, value: impl Into<Vec<u8>>) -> Self {
+        SessionStateChange::SystemVariables(vec![SessionStateVariable::new(name, value)])
+    }
+
+    /// Convenience constructor for schema changes.
+    pub fn schema(schema: impl Into<Vec<u8>>) -> Self {
+        SessionStateChange::Schema(schema.into())
+    }
+
+    /// Convenience constructor for GTID sets.
+    pub fn gtids(gtids: impl Into<Vec<u8>>) -> Self {
+        SessionStateChange::Gtids(gtids.into())
+    }
+
+    /// Convenience constructor for transaction characteristics.
+    pub fn transaction_characteristics(value: impl Into<Vec<u8>>) -> Self {
+        SessionStateChange::TransactionCharacteristics(value.into())
+    }
+
+    /// Convenience constructor for transaction state strings.
+    pub fn transaction_state(value: impl Into<Vec<u8>>) -> Self {
+        SessionStateChange::TransactionState(value.into())
+    }
+
+    /// Build a custom tracker entry with pre-serialized payload.
+    pub fn raw(kind: SessionStateType, payload: impl Into<Vec<u8>>) -> Self {
+        SessionStateChange::Raw {
+            kind,
+            payload: payload.into(),
+        }
+    }
 }
 
 pub use crate::errorcodes::ErrorKind;
@@ -233,6 +467,7 @@ pub struct AsyncMysqlIntermediary<B, S: AsyncRead + Unpin, W> {
     shim: B,
     reader: packet_reader::PacketReader<S>,
     writer: packet_writer::PacketWriter<W>,
+    session_autocommit: bool,
 }
 
 impl<B, R, W> AsyncMysqlIntermediary<B, R, W>
@@ -277,6 +512,7 @@ where
             shim,
             reader,
             writer,
+            session_autocommit: true,
         };
         mi.init_after_ssl(handshake, seq).await?;
         mi.run().await
@@ -531,10 +767,8 @@ where
 
                 if let Some(db_bytes) = handshake.db.as_ref() {
                     if let Ok(db) = std::str::from_utf8(db_bytes) {
-                        let w = InitWriter {
-                            client_capabilities: self.client_capabilities,
-                            writer: &mut self.writer,
-                        };
+                        let w =
+                            InitWriter::with_schema(&mut self.writer, self.client_capabilities, db);
                         self.shim.on_init(db, w).await?;
                         needs_default_ok = false;
                     }
@@ -573,13 +807,31 @@ where
         use crate::commands::Command;
 
         let mut stmts: HashMap<u32, _> = HashMap::new();
-        while let Some((seq, packet)) = self.reader.next_async().await? {
+        loop {
+            let Some((seq, packet)) = self.reader.next_async().await? else {
+                break;
+            };
             self.writer.set_seq(seq + 1);
             let res = commands::parse(&packet);
             match res {
                 Ok(cmd) => {
                     match cmd.1 {
                         Command::Query(q) => {
+                            if let Ok(query) = ::std::str::from_utf8(q) {
+                                if let Some((var_name, raw_value)) =
+                                    parse_set_session_variable(query)
+                                {
+                                    let handled = match var_name.as_str() {
+                                        "autocommit" => false,
+                                        "sql_auto_is_null" => false,
+                                        "sql_select_limit" => false,
+                                        _ => false,
+                                    };
+                                    if handled {
+                                        continue;
+                                    }
+                                }
+                            }
                             if q.starts_with(b"SELECT @@") || q.starts_with(b"select @@") {
                                 let w = QueryResultWriter::new(
                                     &mut self.writer,
@@ -616,13 +868,14 @@ where
                             } else if !self.process_use_statement_on_query
                                 && (q.starts_with(b"USE ") || q.starts_with(b"use "))
                             {
-                                let w = InitWriter {
-                                    client_capabilities: self.client_capabilities,
-                                    writer: &mut self.writer,
-                                };
                                 let schema = ::std::str::from_utf8(&q[b"USE ".len()..])
                                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                                 let schema = schema.trim().trim_end_matches(';').trim_matches('`');
+                                let w = InitWriter::with_schema(
+                                    &mut self.writer,
+                                    self.client_capabilities,
+                                    schema,
+                                );
                                 self.shim.on_init(schema, w).await?;
                             } else {
                                 let w = QueryResultWriter::new(
@@ -714,18 +967,14 @@ where
                             .await?;
                         }
                         Command::Init(schema) => {
-                            let w = InitWriter {
-                                client_capabilities: self.client_capabilities,
-                                writer: &mut self.writer,
-                            };
-                            self.shim
-                                .on_init(
-                                    ::std::str::from_utf8(schema).map_err(|e| {
-                                        io::Error::new(io::ErrorKind::InvalidData, e)
-                                    })?,
-                                    w,
-                                )
-                                .await?;
+                            let schema = ::std::str::from_utf8(schema)
+                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                            let w = InitWriter::with_schema(
+                                &mut self.writer,
+                                self.client_capabilities,
+                                schema,
+                            );
+                            self.shim.on_init(schema, w).await?;
                         }
                         Command::Ping => {
                             writers::write_ok_packet(

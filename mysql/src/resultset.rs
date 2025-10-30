@@ -22,19 +22,44 @@ use tokio::io::AsyncWrite;
 
 use crate::packet_writer::PacketWriter;
 use crate::value::ToMysqlValue;
-use crate::{writers, OkResponse};
+use crate::{writers, OkResponse, SessionStateChange};
 use crate::{Column, ErrorKind, StatementData};
 
 /// Convenience type for responding to a client `USE <db>` command.
 pub struct InitWriter<'a, W> {
     pub(crate) client_capabilities: CapabilityFlags,
     pub(crate) writer: &'a mut PacketWriter<W>,
+    pub(crate) schema_change: Option<String>,
 }
 
 impl<'a, W: 'a + AsyncWrite + Unpin> InitWriter<'a, W> {
+    pub(crate) fn with_schema(
+        writer: &'a mut PacketWriter<W>,
+        client_capabilities: CapabilityFlags,
+        schema: impl Into<String>,
+    ) -> Self {
+        InitWriter {
+            client_capabilities,
+            writer,
+            schema_change: Some(schema.into()),
+        }
+    }
+
     /// Tell client that database context has been changed
     pub async fn ok(self) -> io::Result<()> {
-        writers::write_ok_packet(self.writer, self.client_capabilities, OkResponse::default()).await
+        let mut ok = OkResponse::default();
+        if let Some(schema) = self.schema_change {
+            if self
+                .client_capabilities
+                .contains(CapabilityFlags::CLIENT_SESSION_TRACK)
+            {
+                ok.status_flags
+                    .set(StatusFlags::SERVER_SESSION_STATE_CHANGED, true);
+                ok.session_state_changes
+                    .push(SessionStateChange::schema(schema.into_bytes()));
+            }
+        }
+        writers::write_ok_packet(self.writer, self.client_capabilities, ok).await
     }
 
     /// Tell client that there was a problem changing the database context.

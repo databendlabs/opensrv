@@ -52,6 +52,7 @@ where
         shim,
         reader,
         writer,
+        session_autocommit: true,
     };
     mi.init_after_ssl(handshake, seq).await?;
     mi.run().await
@@ -83,6 +84,7 @@ where
         shim,
         reader,
         writer,
+        session_autocommit: true,
     };
     mi.init_after_ssl(handshake, seq).await?;
     mi.run().await

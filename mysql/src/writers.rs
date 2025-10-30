@@ -17,7 +17,10 @@ use std::io::{self, Write};
 use crate::myc::constants::{CapabilityFlags, StatusFlags};
 use crate::myc::io::WriteMysqlExt;
 use crate::packet_writer::PacketWriter;
-use crate::{Column, ColumnFlags, ColumnType, ErrorKind, OkResponse};
+use crate::{
+    Column, ColumnFlags, ColumnType, ErrorKind, OkResponse, SessionStateChange, SessionStateType,
+    SessionStateVariable,
+};
 use byteorder::{LittleEndian, WriteBytesExt};
 use tokio::io::AsyncWrite;
 
@@ -100,9 +103,70 @@ pub(crate) async fn write_ok_packet<W: AsyncWrite + Unpin>(
             .status_flags
             .contains(StatusFlags::SERVER_SESSION_STATE_CHANGED)
     {
-        w.write_lenenc_str(ok_packet.session_state_info.as_bytes())?;
+        if !ok_packet.session_state_changes.is_empty() {
+            let payload = encode_session_state_changes(&ok_packet.session_state_changes)?;
+            w.write_lenenc_str(&payload)?;
+        } else {
+            w.write_lenenc_str(ok_packet.session_state_info.as_bytes())?;
+        }
     }
     w.end_packet().await
+}
+
+fn encode_session_state_changes(changes: &[SessionStateChange]) -> io::Result<Vec<u8>> {
+    let mut encoded = Vec::new();
+    for change in changes {
+        let (kind, payload) = encode_session_state_change(change)?;
+        encoded.write_lenenc_int(u8::from(kind) as u64)?;
+        encoded.write_lenenc_int(payload.len() as u64)?;
+        encoded.extend_from_slice(&payload);
+    }
+    Ok(encoded)
+}
+
+fn encode_session_state_change(
+    change: &SessionStateChange,
+) -> io::Result<(SessionStateType, Vec<u8>)> {
+    let mut payload = Vec::new();
+    let kind = match change {
+        SessionStateChange::SystemVariables(vars) => {
+            for SessionStateVariable { name, value } in vars {
+                payload.write_lenenc_str(name)?;
+                payload.write_lenenc_str(value)?;
+            }
+            SessionStateType::SESSION_TRACK_SYSTEM_VARIABLES
+        }
+        SessionStateChange::Schema(schema) => {
+            payload.write_lenenc_str(schema)?;
+            SessionStateType::SESSION_TRACK_SCHEMA
+        }
+        SessionStateChange::StateChange(is_tracked) => {
+            if *is_tracked {
+                payload.write_lenenc_str(b"1")?;
+            } else {
+                payload.write_lenenc_str(b"0")?;
+            }
+            SessionStateType::SESSION_TRACK_STATE_CHANGE
+        }
+        SessionStateChange::Gtids(gtids) => {
+            payload.write_lenenc_str(gtids)?;
+            SessionStateType::SESSION_TRACK_GTIDS
+        }
+        SessionStateChange::TransactionCharacteristics(value) => {
+            payload.write_lenenc_str(value)?;
+            SessionStateType::SESSION_TRACK_TRANSACTION_CHARACTERISTICS
+        }
+        SessionStateChange::TransactionState(value) => {
+            payload.write_lenenc_str(value)?;
+            SessionStateType::SESSION_TRACK_TRANSACTION_STATE
+        }
+        SessionStateChange::Raw { kind, payload: raw } => {
+            payload.extend_from_slice(raw);
+            *kind
+        }
+    };
+
+    Ok((kind, payload))
 }
 
 pub async fn write_err<W: AsyncWrite + Unpin>(

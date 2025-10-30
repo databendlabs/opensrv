@@ -25,18 +25,22 @@
 use tokio::io::{duplex, AsyncReadExt};
 
 use crate::packet_writer::PacketWriter;
+use crate::resultset::InitWriter;
 use crate::writers::write_ok_packet;
-use crate::{CapabilityFlags, OkResponse};
+use crate::{
+    CapabilityFlags, OkResponse, SessionStateChange, SessionStateType, SessionStateVariable,
+    StatusFlags,
+};
+use mysql_common::io::ParseBuf;
+use mysql_common::packets::session_state_change::SessionStateChange as ParsedSessionChange;
+use mysql_common::packets::SessionStateInfo;
 
-async fn capture_ok_payload(info: &str, capabilities: CapabilityFlags, header: u8) -> Vec<u8> {
+async fn capture_payload_for_packet(
+    ok_packet: OkResponse,
+    capabilities: CapabilityFlags,
+) -> Vec<u8> {
     let (mut client, server) = duplex(1024);
     let mut writer = PacketWriter::new(server);
-
-    let ok_packet = OkResponse {
-        header,
-        info: info.to_string(),
-        ..Default::default()
-    };
 
     write_ok_packet(&mut writer, capabilities, ok_packet)
         .await
@@ -47,14 +51,24 @@ async fn capture_ok_payload(info: &str, capabilities: CapabilityFlags, header: u
         .read_exact(&mut header_buf)
         .await
         .expect("payload header available");
-    let payload_len =
-        (header_buf[0] as usize) | ((header_buf[1] as usize) << 8) | ((header_buf[2] as usize) << 16);
+    let payload_len = (header_buf[0] as usize)
+        | ((header_buf[1] as usize) << 8)
+        | ((header_buf[2] as usize) << 16);
     let mut payload = vec![0u8; payload_len];
     client
         .read_exact(&mut payload)
         .await
         .expect("payload body available");
     payload
+}
+
+async fn capture_ok_payload(info: &str, capabilities: CapabilityFlags, header: u8) -> Vec<u8> {
+    let ok_packet = OkResponse {
+        header,
+        info: info.to_string(),
+        ..Default::default()
+    };
+    capture_payload_for_packet(ok_packet, capabilities).await
 }
 
 fn parse_lenenc_int(data: &[u8]) -> (u64, usize) {
@@ -147,12 +161,7 @@ async fn ok_packet_info_lenenc_when_deprecate_eof() {
 #[tokio::test]
 async fn ok_packet_info_lenenc_when_header_fe() {
     let info = "Read 1 rows, 1.00 B in 0.007 sec.";
-    let payload = capture_ok_payload(
-        info,
-        CapabilityFlags::CLIENT_PROTOCOL_41,
-        0xfe,
-    )
-    .await;
+    let payload = capture_ok_payload(info, CapabilityFlags::CLIENT_PROTOCOL_41, 0xfe).await;
 
     let (mut idx, header, status, warnings) = consume_ok_prefix(&payload);
     assert_eq!(header, 0xfe);
@@ -165,6 +174,107 @@ async fn ok_packet_info_lenenc_when_header_fe() {
 
     let encoded = &payload[idx..idx + info.len()];
     assert_eq!(encoded, info.as_bytes());
+}
+
+#[tokio::test]
+async fn ok_packet_includes_session_state_changes() {
+    let ok_packet = OkResponse {
+        status_flags: StatusFlags::SERVER_SESSION_STATE_CHANGED,
+        session_state_changes: vec![SessionStateChange::SystemVariables(vec![
+            SessionStateVariable::new("autocommit", "0"),
+        ])],
+        ..Default::default()
+    };
+
+    let payload = capture_payload_for_packet(
+        ok_packet,
+        CapabilityFlags::CLIENT_PROTOCOL_41 | CapabilityFlags::CLIENT_SESSION_TRACK,
+    )
+    .await;
+
+    let (mut idx, header, status, warnings) = consume_ok_prefix(&payload);
+    assert_eq!(header, 0x00);
+    assert!(
+        StatusFlags::from_bits_truncate(status).contains(StatusFlags::SERVER_SESSION_STATE_CHANGED)
+    );
+    assert_eq!(warnings, 0);
+
+    // info is empty but still encoded as length-encoded zero
+    let (info_len, consumed) = parse_lenenc_int(&payload[idx..]);
+    assert_eq!(info_len, 0);
+    idx += consumed;
+
+    let (session_len, consumed) = parse_lenenc_int(&payload[idx..]);
+    let start = idx + consumed;
+    let end = start + session_len as usize;
+    let mut buf = ParseBuf(&payload[start..end]);
+    let entry: SessionStateInfo<'_> = buf.parse(()).expect("session state info entry");
+    assert!(buf.is_empty());
+    assert_eq!(
+        entry.data_type(),
+        SessionStateType::SESSION_TRACK_SYSTEM_VARIABLES
+    );
+
+    match entry.decode().expect("decode session state change") {
+        ParsedSessionChange::SystemVariables(vars) => {
+            assert_eq!(vars.len(), 1);
+            let var = &vars[0];
+            assert_eq!(var.name_str(), "autocommit");
+            assert_eq!(var.value_str(), "0");
+        }
+        other => panic!("unexpected session change: {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn init_writer_emits_schema_session_change() {
+    let capabilities = CapabilityFlags::CLIENT_PROTOCOL_41 | CapabilityFlags::CLIENT_SESSION_TRACK;
+    let (mut client, server) = duplex(1024);
+    let mut writer = PacketWriter::new(server);
+    InitWriter::with_schema(&mut writer, capabilities, "db1")
+        .ok()
+        .await
+        .expect("InitWriter ok succeeds");
+
+    let mut header_buf = [0u8; 4];
+    client
+        .read_exact(&mut header_buf)
+        .await
+        .expect("payload header available");
+    let payload_len = (header_buf[0] as usize)
+        | ((header_buf[1] as usize) << 8)
+        | ((header_buf[2] as usize) << 16);
+    let mut payload = vec![0u8; payload_len];
+    client
+        .read_exact(&mut payload)
+        .await
+        .expect("payload body available");
+
+    let (mut idx, header, status, warnings) = consume_ok_prefix(&payload);
+    assert_eq!(header, 0x00);
+    assert_eq!(warnings, 0);
+    assert!(
+        StatusFlags::from_bits_truncate(status).contains(StatusFlags::SERVER_SESSION_STATE_CHANGED)
+    );
+
+    let (info_len, consumed) = parse_lenenc_int(&payload[idx..]);
+    assert_eq!(info_len, 0);
+    idx += consumed;
+
+    let (session_len, consumed) = parse_lenenc_int(&payload[idx..]);
+    let start = idx + consumed;
+    let end = start + session_len as usize;
+    let mut buf = ParseBuf(&payload[start..end]);
+    let entry: SessionStateInfo<'_> = buf.parse(()).expect("session state entry");
+    assert!(buf.is_empty());
+    assert_eq!(entry.data_type(), SessionStateType::SESSION_TRACK_SCHEMA);
+
+    match entry.decode().expect("schema decode") {
+        ParsedSessionChange::Schema(schema) => {
+            assert_eq!(schema.as_str(), "db1");
+        }
+        other => panic!("unexpected session change: {:?}", other),
+    }
 }
 
 #[tokio::test]
