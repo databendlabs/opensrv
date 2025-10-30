@@ -82,9 +82,12 @@ pub(crate) async fn write_ok_packet<W: AsyncWrite + Unpin>(
 
     // Only session-tracking clients expect length-encoded info per protocol; otherwise emit raw text.
     let has_session_track = client_capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK);
+    let expect_lenenc_info = has_session_track
+        || ok_packet.header == 0xfe
+        || client_capabilities.contains(CapabilityFlags::CLIENT_DEPRECATE_EOF);
     let send_info = !ok_packet.info.is_empty() || has_session_track;
     if send_info {
-        if has_session_track {
+        if expect_lenenc_info {
             w.write_lenenc_str(ok_packet.info.as_bytes())?;
         } else {
             w.write_all(ok_packet.info.as_bytes())?;

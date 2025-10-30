@@ -310,6 +310,7 @@ where
             | CapabilityFlags::CLIENT_PLUGIN_AUTH
             | CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
             | CapabilityFlags::CLIENT_CONNECT_WITH_DB
+            | CapabilityFlags::CLIENT_SESSION_TRACK
             | CapabilityFlags::CLIENT_DEPRECATE_EOF;
 
         #[cfg(feature = "tls")]
