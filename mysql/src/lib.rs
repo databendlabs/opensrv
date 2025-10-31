@@ -30,7 +30,7 @@ use std::io::Write;
 use std::iter;
 
 use async_trait::async_trait;
-use log::info;
+use log::{info, warn};
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
 #[cfg(feature = "tls")]
@@ -589,14 +589,14 @@ where
         writer.end_packet().await?;
         writer.flush_all().await?;
 
-        let (seq, handshake) = reader.next_async().await?.ok_or_else(|| {
+        let (seq, handshake_packet) = reader.next_async().await?.ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::ConnectionAborted,
                 "peer terminated connection",
             )
         })?;
 
-        let handshake = commands::client_handshake(&handshake, false)
+        let handshake = commands::client_handshake(&handshake_packet, false)
             .map_err(|e| match e {
                 nom::Err::Incomplete(_) => io::Error::new(
                     io::ErrorKind::UnexpectedEof,
@@ -624,10 +624,23 @@ where
             })?
             .1;
 
+        info!(
+            "opensrv:mysql initial handshake parsed: username={:?}, auth_plugin={}, db_present={}, client_flags=0x{:X}, tls_requested={}",
+            handshake
+                .username
+                .as_ref()
+                .map(|u| String::from_utf8_lossy(u).into_owned()),
+            String::from_utf8_lossy(&handshake.auth_plugin),
+            handshake.db.is_some(),
+            handshake.capabilities.bits(),
+            handshake.capabilities.contains(CapabilityFlags::CLIENT_SSL)
+        );
+
         writer.set_seq(seq + 1);
 
         #[cfg(not(feature = "tls"))]
         if handshake.capabilities.contains(CapabilityFlags::CLIENT_SSL) {
+            warn!("opensrv:mysql client requested SSL but server TLS support is disabled");
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "client requested SSL despite us not advertising support for it",
@@ -637,6 +650,13 @@ where
 
         #[cfg(feature = "tls")]
         if handshake.capabilities.contains(CapabilityFlags::CLIENT_SSL) {
+            info!(
+                "opensrv:mysql client requested TLS; deferring handshake completion user={:?}",
+                handshake
+                    .username
+                    .as_ref()
+                    .map(|u| String::from_utf8_lossy(u).into_owned())
+            );
             return Ok((true, (handshake, seq, server_capabilities, reader)));
         }
 
@@ -651,7 +671,7 @@ where
     ) -> Result<(), B::Error> {
         #[cfg(feature = "tls")]
         if handshake.capabilities.contains(CapabilityFlags::CLIENT_SSL) {
-            let (_seq, hs) = self.reader.next_async().await?.ok_or_else(|| {
+            let (_seq, hs_packet) = self.reader.next_async().await?.ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::ConnectionAborted,
                     "peer terminated connection",
@@ -659,7 +679,7 @@ where
             })?;
             seq = _seq;
 
-            handshake = commands::client_handshake(&hs, true)
+            handshake = commands::client_handshake(&hs_packet, true)
                 .map_err(|e| match e {
                     nom::Err::Incomplete(_) => io::Error::new(
                         io::ErrorKind::UnexpectedEof,
@@ -687,6 +707,16 @@ where
                 })?
                 .1;
 
+            info!(
+                "opensrv:mysql TLS handshake parsed: username={:?}, auth_plugin={}, db_present={}, client_flags=0x{:X}",
+                handshake
+                    .username
+                    .as_ref()
+                    .map(|u| String::from_utf8_lossy(u).into_owned()),
+                String::from_utf8_lossy(&handshake.auth_plugin),
+                handshake.db.is_some(),
+                handshake.capabilities.bits(),
+            );
             self.writer.set_seq(seq + 1);
         }
 
@@ -700,12 +730,17 @@ where
                     io::ErrorKind::ConnectionAborted,
                     "Required capability: CLIENT_PROTOCOL_41, please upgrade your MySQL client version",
                 );
+                warn!(
+                    "opensrv:mysql handshake missing CLIENT_PROTOCOL_41 capability, client_flags=0x{:X}",
+                    handshake.capabilities.bits()
+                );
                 return Err(err.into());
             }
 
             self.client_capabilities = handshake.capabilities;
             let mut auth_response = handshake.auth_response.clone();
             if let Some(username) = &handshake.username {
+                let username_display = String::from_utf8_lossy(username).into_owned();
                 let auth_plugin_expect = self.shim.auth_plugin_for_username(username).await;
 
                 // auth switch
@@ -750,10 +785,11 @@ where
                     .await
                 {
                     let err_msg = format!(
-                        "Authenticate failed, user: {:?}, auth_plugin: {:?}",
-                        String::from_utf8_lossy(username),
+                        "Authenticate failed, user: {}, auth_plugin: {:?}",
+                        username_display.as_str(),
                         auth_plugin_expect,
                     );
+                    warn!("opensrv:mysql authentication failed: {}", err_msg);
                     writers::write_err(
                         ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
                         err_msg.as_bytes(),
@@ -765,6 +801,16 @@ where
                 }
 
                 let mut needs_default_ok = true;
+                info!(
+                    "opensrv:mysql authentication succeeded for user={}, default_db={:?}, session_track={}",
+                    username_display.as_str(),
+                    handshake
+                        .db
+                        .as_ref()
+                        .map(|db| String::from_utf8_lossy(db).into_owned()),
+                    self.client_capabilities
+                        .contains(CapabilityFlags::CLIENT_SESSION_TRACK),
+                );
 
                 if let Some(db_bytes) = handshake.db.as_ref() {
                     if let Ok(db) = std::str::from_utf8(db_bytes) {
@@ -772,6 +818,11 @@ where
                             InitWriter::with_schema(&mut self.writer, self.client_capabilities, db);
                         self.shim.on_init(db, w).await?;
                         needs_default_ok = false;
+                        info!(
+                            "opensrv:mysql init_db completed for user={}, schema={}",
+                            username_display.as_str(),
+                            db
+                        );
                     }
                 } else if self.reject_connection_on_dbname_absence {
                     writers::write_err(
@@ -796,6 +847,11 @@ where
                     )
                     .await?;
                 }
+
+                info!(
+                    "opensrv:mysql handshake complete for user={}",
+                    username_display.as_str()
+                );
             }
 
             self.writer.flush_all().await?;
