@@ -47,8 +47,9 @@ async fn capture_ok_payload(info: &str, capabilities: CapabilityFlags, header: u
         .read_exact(&mut header_buf)
         .await
         .expect("payload header available");
-    let payload_len =
-        (header_buf[0] as usize) | ((header_buf[1] as usize) << 8) | ((header_buf[2] as usize) << 16);
+    let payload_len = (header_buf[0] as usize)
+        | ((header_buf[1] as usize) << 8)
+        | ((header_buf[2] as usize) << 16);
     let mut payload = vec![0u8; payload_len];
     client
         .read_exact(&mut payload)
@@ -147,12 +148,7 @@ async fn ok_packet_info_lenenc_when_deprecate_eof() {
 #[tokio::test]
 async fn ok_packet_info_lenenc_when_header_fe() {
     let info = "Read 1 rows, 1.00 B in 0.007 sec.";
-    let payload = capture_ok_payload(
-        info,
-        CapabilityFlags::CLIENT_PROTOCOL_41,
-        0xfe,
-    )
-    .await;
+    let payload = capture_ok_payload(info, CapabilityFlags::CLIENT_PROTOCOL_41, 0xfe).await;
 
     let (mut idx, header, status, warnings) = consume_ok_prefix(&payload);
     assert_eq!(header, 0xfe);
