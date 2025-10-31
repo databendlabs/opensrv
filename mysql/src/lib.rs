@@ -30,7 +30,7 @@ use std::io::Write;
 use std::iter;
 
 use async_trait::async_trait;
-use log::{info, warn};
+use log::{error, info, warn};
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
 #[cfg(feature = "tls")]
@@ -596,33 +596,53 @@ where
             )
         })?;
 
-        let handshake = commands::client_handshake(&handshake_packet, false)
-            .map_err(|e| match e {
-                nom::Err::Incomplete(_) => io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "client sent incomplete handshake",
-                ),
-                nom::Err::Failure(nom_error) | nom::Err::Error(nom_error) => {
-                    if let nom::error::ErrorKind::Eof = nom_error.code {
-                        io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            format!(
-                                "client did not complete handshake; got {:?}",
-                                nom_error.input
-                            ),
-                        )
-                    } else {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!(
-                                "bad client handshake; got {:?} ({:?})",
-                                nom_error.input, nom_error.code
-                            ),
-                        )
+        let handshake = match commands::client_handshake(&handshake_packet, false) {
+            Ok((_, handshake)) => handshake,
+            Err(e) => {
+                let preview_len = handshake_packet.len().min(128);
+                let preview = handshake_packet[..preview_len]
+                    .iter()
+                    .map(|b| format!("{:02X}", b))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                error!(
+                    "opensrv:mysql failed to parse initial handshake: err={:?}, packet_len={}, first_bytes({}): {}",
+                    e,
+                    handshake_packet.len(),
+                    preview_len,
+                    preview
+                );
+
+                let io_err = match e {
+                    nom::Err::Incomplete(_) => io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "client sent incomplete handshake",
+                    ),
+                    nom::Err::Failure(nom_error) | nom::Err::Error(nom_error) => {
+                        if let nom::error::ErrorKind::Eof = nom_error.code {
+                            io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                format!(
+                                    "client did not complete handshake; got {:?}",
+                                    nom_error.input
+                                ),
+                            )
+                        } else {
+                            io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                format!(
+                                    "bad client handshake; got {:?} ({:?})",
+                                    nom_error.input, nom_error.code
+                                ),
+                            )
+                        }
                     }
-                }
-            })?
-            .1;
+                };
+
+                return Err(io_err.into());
+            }
+        };
 
         info!(
             "opensrv:mysql initial handshake parsed: username={:?}, auth_plugin={}, db_present={}, client_flags=0x{:X}, tls_requested={}",
@@ -679,33 +699,53 @@ where
             })?;
             seq = _seq;
 
-            handshake = commands::client_handshake(&hs_packet, true)
-                .map_err(|e| match e {
-                    nom::Err::Incomplete(_) => io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "client sent incomplete handshake",
-                    ),
-                    nom::Err::Failure(nom_error) | nom::Err::Error(nom_error) => {
-                        if let nom::error::ErrorKind::Eof = nom_error.code {
-                            io::Error::new(
-                                io::ErrorKind::UnexpectedEof,
-                                format!(
-                                    "client did not complete handshake; got {:?}",
-                                    nom_error.input
-                                ),
-                            )
-                        } else {
-                            io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                format!(
-                                    "bad client handshake; got {:?} ({:?})",
-                                    nom_error.input, nom_error.code
-                                ),
-                            )
+            handshake = match commands::client_handshake(&hs_packet, true) {
+                Ok((_, handshake)) => handshake,
+                Err(e) => {
+                    let preview_len = hs_packet.len().min(128);
+                    let preview = hs_packet[..preview_len]
+                        .iter()
+                        .map(|b| format!("{:02X}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+
+                    error!(
+                        "opensrv:mysql failed to parse TLS handshake: err={:?}, packet_len={}, first_bytes({}): {}",
+                        e,
+                        hs_packet.len(),
+                        preview_len,
+                        preview
+                    );
+
+                    let io_err = match e {
+                        nom::Err::Incomplete(_) => io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "client sent incomplete handshake",
+                        ),
+                        nom::Err::Failure(nom_error) | nom::Err::Error(nom_error) => {
+                            if let nom::error::ErrorKind::Eof = nom_error.code {
+                                io::Error::new(
+                                    io::ErrorKind::UnexpectedEof,
+                                    format!(
+                                        "client did not complete handshake; got {:?}",
+                                        nom_error.input
+                                    ),
+                                )
+                            } else {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    format!(
+                                        "bad client handshake; got {:?} ({:?})",
+                                        nom_error.input, nom_error.code
+                                    ),
+                                )
+                            }
                         }
-                    }
-                })?
-                .1;
+                    };
+
+                    return Err(io_err.into());
+                }
+            };
 
             info!(
                 "opensrv:mysql TLS handshake parsed: username={:?}, auth_plugin={}, db_present={}, client_flags=0x{:X}",
