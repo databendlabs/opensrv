@@ -471,6 +471,16 @@ pub struct AsyncMysqlIntermediary<B, S: AsyncRead + Unpin, W> {
     session_autocommit: bool,
 }
 
+fn packet_preview(bytes: &[u8]) -> (usize, String) {
+    let preview_len = bytes.len().min(128);
+    let preview = bytes[..preview_len]
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ");
+    (preview_len, preview)
+}
+
 impl<B, R, W> AsyncMysqlIntermediary<B, R, W>
 where
     W: AsyncWrite + Send + Unpin,
@@ -542,11 +552,18 @@ where
         // connection_id (4 bytes)
         writer.write_all(&shim.connect_id().to_le_bytes())?;
 
-        let server_capabilities = CapabilityFlags::CLIENT_PROTOCOL_41
+        let mut server_capabilities = CapabilityFlags::CLIENT_LONG_PASSWORD
+            | CapabilityFlags::CLIENT_LONG_FLAG
+            | CapabilityFlags::CLIENT_CONNECT_WITH_DB
+            | CapabilityFlags::CLIENT_PROTOCOL_41
+            | CapabilityFlags::CLIENT_TRANSACTIONS
             | CapabilityFlags::CLIENT_SECURE_CONNECTION
+            | CapabilityFlags::CLIENT_MULTI_STATEMENTS
+            | CapabilityFlags::CLIENT_MULTI_RESULTS
+            | CapabilityFlags::CLIENT_PS_MULTI_RESULTS
             | CapabilityFlags::CLIENT_PLUGIN_AUTH
             | CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
-            | CapabilityFlags::CLIENT_CONNECT_WITH_DB
+            | CapabilityFlags::CLIENT_CONNECT_ATTRS
             | CapabilityFlags::CLIENT_SESSION_TRACK
             | CapabilityFlags::CLIENT_DEPRECATE_EOF;
 
@@ -567,7 +584,7 @@ where
         writer.write_all(&server_capabilities_vec[..2])?; // The lower 2 bytes of the Capabilities Flags, 0x42
                                                           // self.writer.write_all(&[0x00, 0x42])?;
         writer.write_all(&[0x21])?; // UTF8_GENERAL_CI
-        writer.write_all(&[0x00, 0x00])?; // status_flags
+        writer.write_all(&StatusFlags::SERVER_STATUS_AUTOCOMMIT.bits().to_le_bytes())?; // status_flags
         writer.write_all(&server_capabilities_vec[2..4])?; // The upper 2 bytes of the Capabilities Flags
 
         if default_auth_plugin.is_empty() {
@@ -596,15 +613,18 @@ where
             )
         })?;
 
+        let (preview_len, preview) = packet_preview(&handshake_packet);
+        warn!(
+            "opensrv:mysql received initial handshake packet len={}, first_bytes({}): {}",
+            handshake_packet.len(),
+            preview_len,
+            preview
+        );
+
         let handshake = match commands::client_handshake(&handshake_packet, false) {
             Ok((_, handshake)) => handshake,
             Err(e) => {
-                let preview_len = handshake_packet.len().min(128);
-                let preview = handshake_packet[..preview_len]
-                    .iter()
-                    .map(|b| format!("{:02X}", b))
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let (preview_len, preview) = packet_preview(&handshake_packet);
 
                 error!(
                     "opensrv:mysql failed to parse initial handshake: err={:?}, packet_len={}, first_bytes({}): {}",
@@ -644,7 +664,7 @@ where
             }
         };
 
-        info!(
+        warn!(
             "opensrv:mysql initial handshake parsed: username={:?}, auth_plugin={}, db_present={}, client_flags=0x{:X}, tls_requested={}",
             handshake
                 .username
@@ -670,7 +690,7 @@ where
 
         #[cfg(feature = "tls")]
         if handshake.capabilities.contains(CapabilityFlags::CLIENT_SSL) {
-            info!(
+            warn!(
                 "opensrv:mysql client requested TLS; deferring handshake completion user={:?}",
                 handshake
                     .username
@@ -699,15 +719,18 @@ where
             })?;
             seq = _seq;
 
+            let (preview_len, preview) = packet_preview(&hs_packet);
+            warn!(
+                "opensrv:mysql received TLS handshake packet len={}, first_bytes({}): {}",
+                hs_packet.len(),
+                preview_len,
+                preview
+            );
+
             handshake = match commands::client_handshake(&hs_packet, true) {
                 Ok((_, handshake)) => handshake,
                 Err(e) => {
-                    let preview_len = hs_packet.len().min(128);
-                    let preview = hs_packet[..preview_len]
-                        .iter()
-                        .map(|b| format!("{:02X}", b))
-                        .collect::<Vec<_>>()
-                        .join(" ");
+                    let (preview_len, preview) = packet_preview(&hs_packet);
 
                     error!(
                         "opensrv:mysql failed to parse TLS handshake: err={:?}, packet_len={}, first_bytes({}): {}",
@@ -747,7 +770,7 @@ where
                 }
             };
 
-            info!(
+            warn!(
                 "opensrv:mysql TLS handshake parsed: username={:?}, auth_plugin={}, db_present={}, client_flags=0x{:X}",
                 handshake
                     .username
