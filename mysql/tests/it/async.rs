@@ -100,18 +100,21 @@ where
                 Column {
                     table: String::new(),
                     column: "@@max_allowed_packet".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
                     colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
                 },
                 Column {
                     table: String::new(),
                     column: "@@wait_timeout".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
                     colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
                 },
                 Column {
                     table: String::new(),
                     column: "@@socket".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING,
                     colflags: myc::constants::ColumnFlags::empty(),
                 },
@@ -290,18 +293,21 @@ impl AsyncMysqlShim<BufWriter<OwnedWriteHalf>> for InitCountingShim {
                 Column {
                     table: String::new(),
                     column: "@@max_allowed_packet".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
                     colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
                 },
                 Column {
                     table: String::new(),
                     column: "@@wait_timeout".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
                     colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
                 },
                 Column {
                     table: String::new(),
                     column: "@@socket".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING,
                     colflags: myc::constants::ColumnFlags::empty(),
                 },
@@ -384,6 +390,7 @@ async fn no_rows() {
                 let cols = [Column {
                     table: String::new(),
                     column: "a".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
                     colflags: myc::constants::ColumnFlags::empty(),
                 }];
@@ -510,6 +517,7 @@ async fn empty_on_drop() {
                 let cols = [Column {
                     table: String::new(),
                     column: "a".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
                     colflags: myc::constants::ColumnFlags::empty(),
                 }];
@@ -537,6 +545,7 @@ async fn it_queries_nulls() {
                 let cols = &[Column {
                     table: String::new(),
                     column: "a".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
                     colflags: myc::constants::ColumnFlags::empty(),
                 }];
@@ -567,6 +576,7 @@ async fn it_queries() {
                 let cols = &[Column {
                     table: String::new(),
                     column: "a".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
                     colflags: myc::constants::ColumnFlags::empty(),
                 }];
@@ -598,12 +608,14 @@ async fn it_queries_many_rows() {
                     Column {
                         table: String::new(),
                         column: "a".to_owned(),
+                        collen: 0,
                         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
                         colflags: myc::constants::ColumnFlags::empty(),
                     },
                     Column {
                         table: String::new(),
                         column: "b".to_owned(),
+                        collen: 0,
                         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
                         colflags: myc::constants::ColumnFlags::empty(),
                     },
@@ -639,6 +651,7 @@ async fn it_prepares() {
     let cols = vec![Column {
         table: String::new(),
         column: "a".to_owned(),
+        collen: 0,
         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
         colflags: myc::constants::ColumnFlags::empty(),
     }];
@@ -646,6 +659,7 @@ async fn it_prepares() {
     let params = vec![Column {
         table: String::new(),
         column: "c".to_owned(),
+        collen: 0,
         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
         colflags: myc::constants::ColumnFlags::empty(),
     }];
@@ -695,42 +709,49 @@ async fn insert_exec() {
         Column {
             table: String::new(),
             column: "username".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_VARCHAR,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "email".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_VARCHAR,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "pw".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_VARCHAR,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "created".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_DATETIME,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "session".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_VARCHAR,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "rss".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_VARCHAR,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "mail".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_VARCHAR,
             colflags: myc::constants::ColumnFlags::empty(),
         },
@@ -835,6 +856,7 @@ async fn send_long() {
     let cols = vec![Column {
         table: String::new(),
         column: "a".to_owned(),
+        collen: 0,
         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
         colflags: myc::constants::ColumnFlags::empty(),
     }];
@@ -842,6 +864,7 @@ async fn send_long() {
     let params = vec![Column {
         table: String::new(),
         column: "c".to_owned(),
+        collen: 0,
         coltype: myc::constants::ColumnType::MYSQL_TYPE_BLOB,
         colflags: myc::constants::ColumnFlags::empty(),
     }];
@@ -891,12 +914,14 @@ async fn it_prepares_many() {
         Column {
             table: String::new(),
             column: "a".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "b".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
             colflags: myc::constants::ColumnFlags::empty(),
         },
@@ -947,6 +972,7 @@ async fn prepared_empty() {
     let cols = vec![Column {
         table: String::new(),
         column: "a".to_owned(),
+        collen: 0,
         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
         colflags: myc::constants::ColumnFlags::empty(),
     }];
@@ -954,6 +980,7 @@ async fn prepared_empty() {
     let params = vec![Column {
         table: String::new(),
         column: "c".to_owned(),
+        collen: 0,
         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
         colflags: myc::constants::ColumnFlags::empty(),
     }];
@@ -985,6 +1012,7 @@ async fn prepared_no_params() {
     let cols = vec![Column {
         table: String::new(),
         column: "a".to_owned(),
+        collen: 0,
         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
         colflags: myc::constants::ColumnFlags::empty(),
     }];
@@ -1024,12 +1052,14 @@ async fn prepared_nulls() {
         Column {
             table: String::new(),
             column: "a".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "b".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
             colflags: myc::constants::ColumnFlags::empty(),
         },
@@ -1039,12 +1069,14 @@ async fn prepared_nulls() {
         Column {
             table: String::new(),
             column: "c".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
             colflags: myc::constants::ColumnFlags::empty(),
         },
         Column {
             table: String::new(),
             column: "d".to_owned(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
             colflags: myc::constants::ColumnFlags::empty(),
         },
@@ -1096,6 +1128,7 @@ async fn prepared_no_rows() {
     let cols = vec![Column {
         table: String::new(),
         column: "a".to_owned(),
+        collen: 0,
         coltype: myc::constants::ColumnType::MYSQL_TYPE_SHORT,
         colflags: myc::constants::ColumnFlags::empty(),
     }];
@@ -1165,6 +1198,7 @@ async fn large_packet() {
                 let cols = vec![Column {
                     table: String::new(),
                     column: "a".to_owned(),
+                    collen: 0,
                     coltype: myc::constants::ColumnType::MYSQL_TYPE_BLOB,
                     colflags: myc::constants::ColumnFlags::empty(),
                 }];
@@ -1211,18 +1245,21 @@ async fn ok_packet_with_info_when_session_track_disabled() {
                             Column {
                                 table: String::new(),
                                 column: "@@max_allowed_packet".to_owned(),
+                                collen: 0,
                                 coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
                                 colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
                             },
                             Column {
                                 table: String::new(),
                                 column: "@@wait_timeout".to_owned(),
+                                collen: 0,
                                 coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
                                 colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
                             },
                             Column {
                                 table: String::new(),
                                 column: "@@socket".to_owned(),
+                                collen: 0,
                                 coltype: myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING,
                                 colflags: myc::constants::ColumnFlags::empty(),
                             },
@@ -1239,6 +1276,7 @@ async fn ok_packet_with_info_when_session_track_disabled() {
                         let cols = &[Column {
                             table: String::new(),
                             column: "@@version_comment".to_owned(),
+                            collen: 0,
                             coltype: myc::constants::ColumnType::MYSQL_TYPE_VAR_STRING,
                             colflags: myc::constants::ColumnFlags::empty(),
                         }];

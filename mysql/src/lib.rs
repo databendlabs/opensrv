@@ -68,6 +68,9 @@ pub struct Column {
     ///
     /// Note that this is *technically* the column's alias.
     pub column: String,
+    /// Column length (in bytes) reported through COLUMN_DEFINITION41.
+    /// 0 means "use default".
+    pub collen: u32,
     /// This column's type>
     pub coltype: ColumnType,
     /// Any flags associated with this column.
@@ -310,6 +313,7 @@ where
             | CapabilityFlags::CLIENT_PLUGIN_AUTH
             | CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
             | CapabilityFlags::CLIENT_CONNECT_WITH_DB
+            | CapabilityFlags::CLIENT_SESSION_TRACK
             | CapabilityFlags::CLIENT_DEPRECATE_EOF;
 
         #[cfg(feature = "tls")]
@@ -591,6 +595,7 @@ where
                                 let cols = &[Column {
                                     table: String::new(),
                                     column: String::from_utf8_lossy(var_with_at).to_string(),
+                                    collen: 0,
                                     coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
                                     colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
                                 }];

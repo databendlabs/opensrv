@@ -63,6 +63,7 @@ impl<W: AsyncWrite + Send + Unpin> AsyncMysqlShim<W> for Backend {
         let cols = &[Column {
             table: String::new(),
             column: "abc".to_string(),
+            collen: 0,
             coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
             colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
         }];

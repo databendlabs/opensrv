@@ -82,9 +82,12 @@ pub(crate) async fn write_ok_packet<W: AsyncWrite + Unpin>(
 
     // Only session-tracking clients expect length-encoded info per protocol; otherwise emit raw text.
     let has_session_track = client_capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK);
+    let expect_lenenc_info = has_session_track
+        || ok_packet.header == 0xfe
+        || client_capabilities.contains(CapabilityFlags::CLIENT_DEPRECATE_EOF);
     let send_info = !ok_packet.info.is_empty() || has_session_track;
     if send_info {
-        if has_session_track {
+        if expect_lenenc_info {
             w.write_lenenc_str(ok_packet.info.as_bytes())?;
         } else {
             w.write_all(ok_packet.info.as_bytes())?;
@@ -171,7 +174,8 @@ where
         w.write_lenenc_str(b"")?;
         w.write_lenenc_int(0xC)?;
         w.write_u16::<LittleEndian>(column_charset(c))?;
-        w.write_u32::<LittleEndian>(1024)?;
+        let column_length = if c.collen == 0 { 1024 } else { c.collen };
+        w.write_u32::<LittleEndian>(column_length)?;
         w.write_u8(c.coltype as u8)?;
         w.write_u16::<LittleEndian>(c.colflags.bits())?;
         w.write_all(&[0x00])?; // decimals
@@ -302,6 +306,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_VAR_STRING,
             colflags: ColumnFlags::empty(),
         };
@@ -314,6 +319,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_LONG,
             colflags: ColumnFlags::empty(),
         };
@@ -326,6 +332,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_STRING,
             colflags: ColumnFlags::BINARY_FLAG,
         };
@@ -338,6 +345,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_BLOB,
             colflags: ColumnFlags::empty(),
         };
@@ -350,6 +358,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_VAR_STRING,
             colflags: ColumnFlags::BLOB_FLAG,
         };
