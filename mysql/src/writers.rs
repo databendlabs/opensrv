@@ -174,7 +174,8 @@ where
         w.write_lenenc_str(b"")?;
         w.write_lenenc_int(0xC)?;
         w.write_u16::<LittleEndian>(column_charset(c))?;
-        w.write_u32::<LittleEndian>(1024)?;
+        let column_length = if c.collen == 0 { 1024 } else { c.collen };
+        w.write_u32::<LittleEndian>(column_length)?;
         w.write_u8(c.coltype as u8)?;
         w.write_u16::<LittleEndian>(c.colflags.bits())?;
         w.write_all(&[0x00])?; // decimals
@@ -305,6 +306,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_VAR_STRING,
             colflags: ColumnFlags::empty(),
         };
@@ -317,6 +319,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_LONG,
             colflags: ColumnFlags::empty(),
         };
@@ -329,6 +332,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_STRING,
             colflags: ColumnFlags::BINARY_FLAG,
         };
@@ -341,6 +345,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_BLOB,
             colflags: ColumnFlags::empty(),
         };
@@ -353,6 +358,7 @@ mod tests {
         let column = Column {
             table: "t".into(),
             column: "c".into(),
+            collen: 0,
             coltype: ColumnType::MYSQL_TYPE_VAR_STRING,
             colflags: ColumnFlags::BLOB_FLAG,
         };

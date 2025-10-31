@@ -30,6 +30,7 @@ macro_rules! rt {
             let mut col = Column {
                 table: String::new(),
                 column: String::new(),
+                collen: 0,
                 coltype: $ct,
                 colflags: ColumnFlags::empty(),
             };
