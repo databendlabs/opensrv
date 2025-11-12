@@ -238,6 +238,15 @@ pub struct AsyncMysqlIntermediary<B, S: AsyncRead + Unpin, W> {
     writer: packet_writer::PacketWriter<W>,
 }
 
+/// Configuration used to craft the initial server handshake before a shim is available.
+#[derive(Clone, Debug)]
+pub struct ServerHandshakeConfig {
+    pub version: String,
+    pub connection_id: u32,
+    pub default_auth_plugin: String,
+    pub scramble: [u8; SCRAMBLE_SIZE],
+}
+
 impl<B, R, W> AsyncMysqlIntermediary<B, R, W>
 where
     W: AsyncWrite + Send + Unpin,
@@ -297,16 +306,45 @@ where
         ),
         B::Error,
     > {
+        let config = ServerHandshakeConfig {
+            version: shim.version(),
+            connection_id: shim.connect_id(),
+            default_auth_plugin: shim.default_auth_plugin().to_string(),
+            scramble: shim.salt(),
+        };
+
+        AsyncMysqlIntermediary::<B, R, W>::init_before_ssl_with_config(
+            &config,
+            input_stream,
+            output_stream,
+            #[cfg(feature = "tls")]
+            tls_conf,
+        )
+        .await
+        .map_err(B::Error::from)
+    }
+
+    pub async fn init_before_ssl_with_config(
+        config: &ServerHandshakeConfig,
+        input_stream: R,
+        output_stream: &mut W,
+        #[cfg(feature = "tls")] tls_conf: &Option<std::sync::Arc<ServerConfig>>,
+    ) -> io::Result<
+        (
+            bool,
+            (ClientHandshake, u8, CapabilityFlags, PacketReader<R>),
+        ),
+    > {
         let mut reader = PacketReader::new(input_stream);
         let mut writer = PacketWriter::new(output_stream);
         // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
         writer.write_all(&[10])?; // protocol 10
 
-        writer.write_all(shim.version().as_bytes())?;
+        writer.write_all(config.version.as_bytes())?;
         writer.write_all(&[0x00])?;
 
         // connection_id (4 bytes)
-        writer.write_all(&shim.connect_id().to_le_bytes())?;
+        writer.write_all(&config.connection_id.to_le_bytes())?;
 
         let server_capabilities = CapabilityFlags::CLIENT_PROTOCOL_41
             | CapabilityFlags::CLIENT_SECURE_CONNECTION
@@ -324,8 +362,8 @@ where
         };
 
         let server_capabilities_vec = server_capabilities.bits().to_le_bytes();
-        let default_auth_plugin = shim.default_auth_plugin();
-        let scramble = shim.salt();
+        let default_auth_plugin = config.default_auth_plugin.as_str();
+        let scramble = &config.scramble;
 
         writer.write_all(&scramble[0..AUTH_PLUGIN_DATA_PART_1_LENGTH])?; // auth-plugin-data-part-1
         writer.write_all(&[0x00])?;
