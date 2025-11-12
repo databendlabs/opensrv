@@ -329,12 +329,10 @@ where
         input_stream: R,
         output_stream: &mut W,
         #[cfg(feature = "tls")] tls_conf: &Option<std::sync::Arc<ServerConfig>>,
-    ) -> io::Result<
-        (
-            bool,
-            (ClientHandshake, u8, CapabilityFlags, PacketReader<R>),
-        ),
-    > {
+    ) -> io::Result<(
+        bool,
+        (ClientHandshake, u8, CapabilityFlags, PacketReader<R>),
+    )> {
         let mut reader = PacketReader::new(input_stream);
         let mut writer = PacketWriter::new(output_stream);
         // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
