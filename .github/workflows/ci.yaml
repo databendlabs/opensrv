@@ -31,8 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install cargo-aduit
-        run: cargo install cargo-audit --version 0.21.1 --locked
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.0 --locked
       - name: Audit dependencies
         run: cargo audit
 

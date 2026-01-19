@@ -3,6 +3,7 @@ name = "opensrv-mysql"
 version = "0.8.0"
 authors = ["Databend Authors <opensource@datafuselabs.com>"]
 edition = "2021"
+rust-version = "1.85"
 license = "Apache-2.0"
 description = "Bindings for emulating a MySQL/MariaDB server."
 readme = "README.md"

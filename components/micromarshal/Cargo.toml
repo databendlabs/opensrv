@@ -3,6 +3,7 @@ name = "micromarshal"
 version = "0.7.0"
 authors = ["Databend Authors <opensource@datafuselabs.com>"]
 edition = "2021"
+rust-version = "1.85"
 license = "Apache-2.0"
 description = "(De)Serialisation between Rust values and binary byte objects. "
 readme = "README.md"
