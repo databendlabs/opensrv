@@ -3,4 +3,4 @@ resolver = "2"
 members = ["clickhouse", "mysql", "components/micromarshal"]
 
 [patch.crates-io]
-subprocess = "=0.2.12"
+subprocess = { git = "https://github.com/hniksic/rust-subprocess", tag = "release/0.2.9" }
