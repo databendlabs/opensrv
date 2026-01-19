@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["clickhouse", "mysql", "components/micromarshal"]
+
+[patch.crates-io]
+subprocess = "=0.2.12"
