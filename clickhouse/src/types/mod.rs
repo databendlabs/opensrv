@@ -277,12 +277,12 @@ impl SqlType {
             SqlType::Int32 => "Int32".into(),
             SqlType::Int64 => "Int64".into(),
             SqlType::String => "String".into(),
-            SqlType::FixedString(str_len) => format!("FixedString({})", str_len).into(),
+            SqlType::FixedString(str_len) => format!("FixedString({str_len})").into(),
             SqlType::Float32 => "Float32".into(),
             SqlType::Float64 => "Float64".into(),
             SqlType::Date => "Date".into(),
             SqlType::DateTime(DateTimeType::DateTime64(precision, tz)) => {
-                format!("DateTime64({}, '{:?}')", precision, tz).into()
+                format!("DateTime64({precision}, '{tz:?}')").into()
             }
             SqlType::DateTime(_) => "DateTime".into(),
             SqlType::Ipv4 => "IPv4".into(),
@@ -291,19 +291,19 @@ impl SqlType {
             SqlType::Nullable(nested) => format!("Nullable({})", &nested).into(),
             SqlType::Array(nested) => format!("Array({})", &nested).into(),
             SqlType::Decimal(precision, scale) => {
-                format!("Decimal({}, {})", precision, scale).into()
+                format!("Decimal({precision}, {scale})").into()
             }
             SqlType::Enum8(values) => {
                 let a: Vec<String> = values
                     .iter()
-                    .map(|(name, value)| format!("'{}' = {}", name, value))
+                    .map(|(name, value)| format!("'{name}' = {value}"))
                     .collect();
                 format!("Enum8({})", a.join(",")).into()
             }
             SqlType::Enum16(values) => {
                 let a: Vec<String> = values
                     .iter()
-                    .map(|(name, value)| format!("'{}' = {}", name, value))
+                    .map(|(name, value)| format!("'{name}' = {value}"))
                     .collect();
                 format!("Enum16({})", a.join(",")).into()
             }

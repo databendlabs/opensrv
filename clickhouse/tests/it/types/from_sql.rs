@@ -30,7 +30,7 @@ fn test_bad_convert() {
         Ok(_) => panic!("should fail"),
         Err(e) => assert_eq!(
             "From SQL error: `SqlType::UInt16 cannot be cast to u32.`".to_string(),
-            format!("{}", e)
+            format!("{e}")
         ),
     }
 }

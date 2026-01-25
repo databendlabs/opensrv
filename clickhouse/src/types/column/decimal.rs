@@ -181,7 +181,7 @@ impl ColumnData for DecimalColumnData {
                 }
             }
         } else {
-            panic!("value should be decimal ({:?})", value);
+            panic!("value should be decimal ({value:?})");
         }
     }
 

@@ -114,7 +114,7 @@ impl dyn ColumnData {
                     let column_timezone = get_timezone(&timezone, tz)?;
                     W::wrap(DateTime64ColumnData::load(reader, size, precision, column_timezone)?)
                 } else {
-                    let message = format!("Unsupported column type \"{}\".", type_name);
+                    let message = format!("Unsupported column type \"{type_name}\".");
                     return Err(message.into());
                 }
             }

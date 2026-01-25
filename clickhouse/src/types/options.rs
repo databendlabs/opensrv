@@ -51,8 +51,8 @@ impl fmt::Debug for OptionsSource {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let guard = self.state.lock().unwrap();
         match &*guard {
-            State::Url(ref url) => write!(f, "Url({})", url),
-            State::Raw(ref options) => write!(f, "{:?}", options),
+            State::Url(ref url) => write!(f, "Url({url})"),
+            State::Raw(ref options) => write!(f, "{options:?}"),
         }
     }
 }
@@ -620,7 +620,7 @@ pub fn parse_compression(source: &str) -> std::result::Result<bool, ()> {
 pub fn parse_hosts(source: &str) -> std::result::Result<Vec<Url>, ()> {
     let mut result = Vec::new();
     for host in source.split(',') {
-        match Url::from_str(&format!("tcp://{}", host)) {
+        match Url::from_str(&format!("tcp://{host}")) {
             Ok(url) => result.push(url),
             Err(_) => return Err(()),
         }

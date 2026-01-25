@@ -32,7 +32,7 @@ fn test_get() {
     let mut pool = StringPool::with_capacity(10);
 
     for i in 0..1000 {
-        let s = format!("text-{}", i);
+        let s = format!("text-{i}");
         let mut buffer = pool.allocate(s.len());
 
         assert_eq!(buffer.len(), s.len());
@@ -41,6 +41,6 @@ fn test_get() {
 
     for i in 0..1000 {
         let s = String::from_utf8(Vec::from(pool.get(i))).unwrap();
-        assert_eq!(s, format!("text-{}", i));
+        assert_eq!(s, format!("text-{i}"));
     }
 }

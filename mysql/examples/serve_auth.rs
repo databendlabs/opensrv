@@ -58,7 +58,7 @@ impl<W: AsyncWrite + Send + Unpin> AsyncMysqlShim<W> for Backend {
         sql: &'a str,
         results: QueryResultWriter<'a, W>,
     ) -> io::Result<()> {
-        println!("execute sql {:?}", sql);
+        println!("execute sql {sql:?}");
 
         let cols = &[Column {
             table: String::new(),

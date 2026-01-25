@@ -174,7 +174,7 @@ impl<'a> ValueInner<'a> {
             ColumnType::MYSQL_TYPE_NULL => Ok(ValueInner::NULL),
             ct => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("unknown column type {:?}", ct),
+                format!("unknown column type {ct:?}"),
             )),
         }
     }
@@ -211,7 +211,7 @@ impl<'a> From<Value<'a>> for &'a str {
         if let ValueInner::Bytes(v) = val.0 {
             ::std::str::from_utf8(v).unwrap()
         } else {
-            panic!("invalid type conversion from {:?} to string", val)
+            panic!("invalid type conversion from {val:?} to string")
         }
     }
 }
@@ -228,7 +228,7 @@ impl<'a> From<Value<'a>> for NaiveDate {
             )
             .unwrap()
         } else {
-            panic!("invalid type conversion from {:?} to date", val)
+            panic!("invalid type conversion from {val:?} to date")
         }
     }
 }
@@ -243,7 +243,7 @@ pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
     let ValueInner::Datetime(v) = val.0 else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("invalid type conversion from {:?} to datetime", val),
+            format!("invalid type conversion from {val:?} to datetime"),
         ));
     };
 
@@ -301,7 +301,7 @@ pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("illegal timestamp value length: {}", len),
+                format!("illegal timestamp value length: {len}"),
             ))
         }
     };
@@ -309,7 +309,7 @@ pub fn to_naive_datetime(val: Value) -> Result<NaiveDateTime, io::Error> {
     d.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("invalid data conversion from {:?} to datetime", val),
+            format!("invalid data conversion from {val:?} to datetime"),
         )
     })
 }
@@ -345,7 +345,7 @@ impl<'a> From<Value<'a>> for Duration {
                 micros * 1_000,
             )
         } else {
-            panic!("invalid type conversion from {:?} to datetime", val)
+            panic!("invalid type conversion from {val:?} to datetime")
         }
     }
 }

@@ -86,7 +86,7 @@ where
 
     let method: u8 = reader.read_scalar()?;
     if method != 0x82 {
-        let message: String = format!("unsupported compression method {}", method);
+        let message: String = format!("unsupported compression method {method}");
         return Err(raise_error(message));
     }
 

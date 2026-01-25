@@ -460,15 +460,15 @@ fn print_line(
     center: char,
     right: &str,
 ) -> fmt::Result {
-    write!(f, "{}", left)?;
+    write!(f, "{left}")?;
     for (i, len) in lens.iter().enumerate() {
         if i != 0 {
-            write!(f, "{}", center)?;
+            write!(f, "{center}")?;
         }
 
         write!(f, "{:\u{2500}>width$}", "", width = len + 2)?;
     }
-    write!(f, "{}", right)
+    write!(f, "{right}")
 }
 
 fn text_cells<K: ColumnType>(data: &Column<K>) -> Vec<String> {

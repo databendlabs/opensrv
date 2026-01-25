@@ -148,10 +148,10 @@ impl fmt::Display for ValueRef<'_> {
             }
             ValueRef::Nullable(v) => match v {
                 Either::Left(_) => write!(f, "NULL"),
-                Either::Right(inner) => write!(f, "{}", inner),
+                Either::Right(inner) => write!(f, "{inner}"),
             },
             ValueRef::Array(_, vs) => {
-                let cells: Vec<String> = vs.iter().map(|v| format!("{}", v)).collect();
+                let cells: Vec<String> = vs.iter().map(|v| format!("{v}")).collect();
                 write!(f, "[{}]", cells.join(", "))
             }
             ValueRef::Decimal(v) => fmt::Display::fmt(v, f),
@@ -166,14 +166,14 @@ impl fmt::Display for ValueRef<'_> {
                 buffer[..8].reverse();
                 buffer[8..].reverse();
                 match Uuid::from_slice(&buffer) {
-                    Ok(uuid) => write!(f, "{}", uuid),
-                    Err(e) => write!(f, "{}", e),
+                    Ok(uuid) => write!(f, "{uuid}"),
+                    Err(e) => write!(f, "{e}"),
                 }
             }
             ValueRef::Enum8(_, v) => fmt::Display::fmt(v, f),
             ValueRef::Enum16(_, v) => fmt::Display::fmt(v, f),
             ValueRef::Tuple(v) => {
-                let cells: Vec<String> = v.iter().map(|v| format!("{}", v)).collect();
+                let cells: Vec<String> = v.iter().map(|v| format!("{v}")).collect();
                 write!(f, "({})", cells.join(", "))
             }
         }

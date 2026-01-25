@@ -700,7 +700,7 @@ where
                             let state = stmts.get_mut(&stmt).ok_or_else(|| {
                                 io::Error::new(
                                     io::ErrorKind::InvalidData,
-                                    format!("asked to execute unknown statement {}", stmt),
+                                    format!("asked to execute unknown statement {stmt}"),
                                 )
                             })?;
                             {
@@ -721,8 +721,7 @@ where
                                     io::Error::new(
                                         io::ErrorKind::InvalidData,
                                         format!(
-                                            "got long data packet for unknown statement {}",
-                                            stmt
+                                            "got long data packet for unknown statement {stmt}"
                                         ),
                                     )
                                 })?

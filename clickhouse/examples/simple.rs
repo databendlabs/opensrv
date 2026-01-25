@@ -68,7 +68,7 @@ async fn main() -> std::result::Result<(), Box<dyn Error>> {
             )
             .await
             {
-                println!("Error: {:?}", e);
+                println!("Error: {e:?}");
             }
         });
     }

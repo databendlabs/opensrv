@@ -99,7 +99,7 @@ impl<R: Read> PacketReader<R> {
                     Err(nom::Err::Failure(ctx)) => {
                         let err = Err(io::Error::new(
                             io::ErrorKind::InvalidData,
-                            format!("{:?}", ctx),
+                            format!("{ctx:?}"),
                         ));
                         return err;
                     }
@@ -159,7 +159,7 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
                     Err(nom::Err::Failure(ctx)) => {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
-                            format!("{:?}", ctx),
+                            format!("{ctx:?}"),
                         ));
                     }
                 }

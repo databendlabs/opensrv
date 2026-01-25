@@ -142,8 +142,7 @@ impl Unmarshal<char> for char {
         match char::from_u32(bits) {
             Some(c) => Ok(c),
             None => Err(Error::other(format!(
-                "try unmarshal u32 to char failed: {}",
-                bits
+                "try unmarshal u32 to char failed: {bits}"
             ))),
         }
     }

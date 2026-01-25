@@ -155,7 +155,7 @@ impl fmt::Display for Value {
             Value::Int64(ref v) => fmt::Display::fmt(v, f),
             Value::String(ref v) => match str::from_utf8(v) {
                 Ok(s) => fmt::Display::fmt(s, f),
-                Err(_) => write!(f, "{:?}", v),
+                Err(_) => write!(f, "{v:?}"),
             },
             Value::Float32(ref v) => fmt::Display::fmt(v, f),
             Value::Float64(ref v) => fmt::Display::fmt(v, f),
@@ -189,7 +189,7 @@ impl fmt::Display for Value {
                 Either::Right(data) => data.fmt(f),
             },
             Value::Array(_, vs) => {
-                let cells: Vec<String> = vs.iter().map(|v| format!("{}", v)).collect();
+                let cells: Vec<String> = vs.iter().map(|v| format!("{v}")).collect();
                 write!(f, "[{}]", cells.join(", "))
             }
             Value::Decimal(v) => fmt::Display::fmt(v, f),
@@ -204,14 +204,14 @@ impl fmt::Display for Value {
                 buffer[..8].reverse();
                 buffer[8..].reverse();
                 match Uuid::from_slice(&buffer) {
-                    Ok(uuid) => write!(f, "{}", uuid),
-                    Err(e) => write!(f, "{}", e),
+                    Ok(uuid) => write!(f, "{uuid}"),
+                    Err(e) => write!(f, "{e}"),
                 }
             }
-            Value::Enum8(ref _v1, ref v2) => write!(f, "Enum8, {}", v2),
-            Value::Enum16(ref _v1, ref v2) => write!(f, "Enum16, {}", v2),
+            Value::Enum8(ref _v1, ref v2) => write!(f, "Enum8, {v2}"),
+            Value::Enum16(ref _v1, ref v2) => write!(f, "Enum16, {v2}"),
             Value::Tuple(v) => {
-                let cells: Vec<String> = v.iter().map(|v| format!("{}", v)).collect();
+                let cells: Vec<String> = v.iter().map(|v| format!("{v}")).collect();
                 write!(f, "({})", cells.join(", "))
             }
         }
@@ -367,7 +367,7 @@ impl convert::From<Value> for String {
             }
         }
         let from = SqlType::from(v);
-        panic!("Can't convert Value::{} into String.", from);
+        panic!("Can't convert Value::{from} into String.");
     }
 }
 
@@ -377,7 +377,7 @@ impl convert::From<Value> for Vec<u8> {
             Value::String(bs) => bs.to_vec(),
             _ => {
                 let from = SqlType::from(v);
-                panic!("Can't convert Value::{} into Vec<u8>.", from)
+                panic!("Can't convert Value::{from} into Vec<u8>.")
             }
         }
     }

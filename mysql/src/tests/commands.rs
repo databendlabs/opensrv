@@ -34,7 +34,7 @@ fn it_parses_handshake() {
     let mut pr = PacketReader::new(r);
     let (_, p) = pr.next().unwrap().unwrap();
     let (_, handshake) = client_handshake(&p, false).unwrap();
-    println!("{:?}", handshake);
+    println!("{handshake:?}");
     assert!(handshake
         .capabilities
         .contains(CapabilityFlags::CLIENT_LONG_PASSWORD));

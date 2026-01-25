@@ -186,7 +186,7 @@ where
         C: FnOnce(mysql_async::Conn) -> F + Send + Sync + 'static,
     {
         self.test_with_opts(
-            |port| Opts::from_url(&format!("mysql://127.0.0.1:{}", port)).unwrap(),
+            |port| Opts::from_url(&format!("mysql://127.0.0.1:{port}")).unwrap(),
             c,
         )
         .await;
@@ -354,7 +354,7 @@ async fn handshake_with_initial_database_relies_on_backend_ack() {
         AsyncMysqlIntermediary::run_on(shim, r, w).await.unwrap();
     });
 
-    let opts = Opts::from_url(&format!("mysql://127.0.0.1:{}/initial_db", port)).unwrap();
+    let opts = Opts::from_url(&format!("mysql://127.0.0.1:{port}/initial_db")).unwrap();
     let mut conn = mysql_async::Conn::new(opts).await.unwrap();
     conn.ping().await.unwrap();
     conn.disconnect().await.unwrap();
@@ -499,7 +499,7 @@ async fn error_response() {
                 assert_eq!(msg, &err.1);
             }
             Err(e) => {
-                eprintln!("unexpected {:?}", e);
+                eprintln!("unexpected {e:?}");
                 panic!();
             }
         }

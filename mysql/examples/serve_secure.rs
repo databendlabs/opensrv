@@ -64,7 +64,7 @@ mod tls {
             sql: &'a str,
             results: QueryResultWriter<'a, W>,
         ) -> io::Result<()> {
-            println!("execute sql {:?}", sql);
+            println!("execute sql {sql:?}");
             results.start(&[]).await?.finish().await
         }
     }
