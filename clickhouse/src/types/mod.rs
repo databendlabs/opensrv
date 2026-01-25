@@ -290,9 +290,7 @@ impl SqlType {
             SqlType::Uuid => "UUID".into(),
             SqlType::Nullable(nested) => format!("Nullable({})", &nested).into(),
             SqlType::Array(nested) => format!("Array({})", &nested).into(),
-            SqlType::Decimal(precision, scale) => {
-                format!("Decimal({precision}, {scale})").into()
-            }
+            SqlType::Decimal(precision, scale) => format!("Decimal({precision}, {scale})").into(),
             SqlType::Enum8(values) => {
                 let a: Vec<String> = values
                     .iter()
