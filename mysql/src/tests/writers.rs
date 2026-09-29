@@ -25,8 +25,8 @@
 use tokio::io::{duplex, AsyncReadExt};
 
 use crate::packet_writer::PacketWriter;
-use crate::writers::write_ok_packet;
-use crate::{CapabilityFlags, OkResponse};
+use crate::writers::{write_eof_packet, write_ok_packet};
+use crate::{CapabilityFlags, OkResponse, StatusFlags};
 
 async fn capture_ok_payload(info: &str, capabilities: CapabilityFlags, header: u8) -> Vec<u8> {
     let (mut client, server) = duplex(1024);
@@ -200,4 +200,61 @@ async fn ok_packet_info_extended_lenenc_with_flags() {
 
     let encoded = &payload[idx..idx + info.len()];
     assert_eq!(encoded, info.as_bytes());
+}
+
+// Decides, the way a MariaDB 12.3 client does, whether reading a COM_FIELD_LIST reply
+// would block. The client treats a canonical 5-byte packet starting with 0xfe as the EOF
+// terminator (field list done). Any other packet is a column definition whose leading
+// length-encoded integer is the catalog length; a leading 0xfe (254) means 8 bytes
+// follow, and if the packet does not carry them the client waits forever (the hang).
+fn field_list_reply_hangs(payload: &[u8]) -> bool {
+    if payload.len() == 5 && payload[0] == 0xfe {
+        return false;
+    }
+    let need = match payload[0] {
+        0xfc => 3,
+        0xfd => 4,
+        0xfe => 9,
+        _ => 1,
+    };
+    payload.len() < need
+}
+
+#[tokio::test]
+async fn com_field_list_reply_does_not_hang_client() {
+    let (mut client, server) = duplex(1024);
+    let mut writer = PacketWriter::new(server);
+
+    write_eof_packet(&mut writer, StatusFlags::empty())
+        .await
+        .expect("write_eof_packet succeeds");
+
+    let mut header = [0u8; 4];
+    client
+        .read_exact(&mut header)
+        .await
+        .expect("payload header available");
+    let payload_len =
+        (header[0] as usize) | ((header[1] as usize) << 8) | ((header[2] as usize) << 16);
+    let mut payload = vec![0u8; payload_len];
+    client
+        .read_exact(&mut payload)
+        .await
+        .expect("payload body available");
+
+    assert!(
+        !field_list_reply_hangs(&payload),
+        "COM_FIELD_LIST reply {:02x?} would make a MariaDB 12.3 client block waiting for more bytes",
+        payload
+    );
+}
+
+#[test]
+fn old_malformed_ok_packet_would_hang() {
+    // The pre-fix reply was an 8-byte OK packet with header 0xfe. It is not the
+    // canonical 5-byte EOF, so the client decodes 0xfe as a length-encoded 254 and
+    // waits for 8 bytes that are not there -- the exact hang this test guards.
+    assert!(field_list_reply_hangs(&[
+        0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ]));
 }
