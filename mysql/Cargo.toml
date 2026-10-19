@@ -23,7 +23,9 @@ async-trait = "0.1.52"
 byteorder = "1.4.3"
 bytes = "1.7.0"
 chrono = "0.4.20"
-mysql_common = { version = "0.32.0", features = ["chrono"] }
+mysql_common = { version = "0.37", default-features = false, features = ["chrono"] }
+# mysql_common needs a flate2 backend; use the pure-Rust one (no zlib C build).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 nom = "7.1.0"
 tokio = { version = "1.17.0", features = ["io-util", "io-std"] }
 tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring"] }
