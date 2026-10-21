@@ -736,21 +736,13 @@ where
                             // NOTE: spec dictates no response from server
                         }
                         Command::ListFields(_) => {
-                            // mysql_list_fields (CommandByte::COM_FIELD_LIST / 0x04) has been deprecated in mysql 5.7
-                            // and will be removed in a future version.
-                            // The mysql command line tool issues one of these commands after switching databases with USE <DB>.
-                            // Return a invalid column definitions lead to incorrect mariadb-client behaviour,
-                            // see https://github.com/datafuselabs/databend/issues/4439
-                            let ok_packet = OkResponse {
-                                header: 0xfe,
-                                ..Default::default()
-                            };
-                            writers::write_ok_packet(
-                                &mut self.writer,
-                                self.client_capabilities,
-                                ok_packet,
-                            )
-                            .await?;
+                            // COM_FIELD_LIST (0x04) is deprecated and will be removed in a future version, but
+                            // some clients still issue it after switching databases with USE <db>.
+                            // Its response is zero or more Column Definition packets followed by an EOF packet:
+                            // https://dev.mysql.com/doc/dev/mysql-server/8.4.11/page_protocol_com_field_list.html
+                            // Return an empty field list (a single EOF packet).
+                            writers::write_eof_packet(&mut self.writer, StatusFlags::empty())
+                                .await?;
                         }
                         Command::Init(schema) => {
                             let w = InitWriter {

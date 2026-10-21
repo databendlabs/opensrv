@@ -18,6 +18,7 @@ use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -28,9 +29,9 @@ use opensrv_mysql::{
     AsyncMysqlIntermediary, AsyncMysqlShim, Column, ErrorKind, InitWriter, OkResponse, ParamParser,
     QueryResultWriter, StatementMetaWriter, U24_MAX,
 };
-use tokio::io::BufWriter;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::tcp::OwnedWriteHalf;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 struct TestingShim<Q, P, E> {
     columns: Vec<Column>,
@@ -1302,4 +1303,103 @@ async fn ok_packet_with_info_when_session_track_disabled() {
         Ok(())
     })
     .await;
+}
+
+/// Minimal MySQL wire helpers used to reproduce the #9158 hang against the full
+/// server loop (`AsyncMysqlIntermediary::run_on`), exactly as a manual
+/// server + client reproduction would.
+async fn read_packet(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
+    let mut header = [0u8; 4];
+    stream.read_exact(&mut header).await?;
+    let len = (header[0] as usize) | ((header[1] as usize) << 8) | ((header[2] as usize) << 16);
+    let mut payload = vec![0u8; len];
+    stream.read_exact(&mut payload).await?;
+    Ok(payload)
+}
+
+async fn write_packet(stream: &mut TcpStream, seq: u8, payload: &[u8]) -> io::Result<()> {
+    let len = payload.len() as u32;
+    let mut header = [0u8; 4];
+    header[..3].copy_from_slice(&len.to_le_bytes()[..3]);
+    header[3] = seq;
+    stream.write_all(&header).await?;
+    stream.write_all(payload).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn com_field_list_reply_does_not_hang_client() {
+    // Reproduces the manual verification of the #9158 fix: connect a real client,
+    // issue COM_FIELD_LIST (0x04) -- the deprecated command the mysql CLI sends once
+    // per table during name-completion rehash after USE <db> -- and read the reply.
+    // The old code answered with a malformed 8-byte OK packet (fe 00 00 00 00 00 00 00)
+    // that a strict client (MariaDB 12.3) decodes as a length-encoded column count and
+    // blocks trying to read the missing byte. The fix answers with a canonical EOF
+    // packet, so the read must complete without hanging.
+    let shim = TestingShim::new(
+        |_, _| unreachable!(),
+        |_| unreachable!(),
+        |_, _, _| unreachable!(),
+    );
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (r, w) = socket.into_split();
+        let w = BufWriter::with_capacity(100 * 1024, w);
+        AsyncMysqlIntermediary::run_on(shim, r, w).await.unwrap();
+    });
+
+    let mut client = TcpStream::connect(addr).await.unwrap();
+
+    // 1. Read (and discard) the server greeting.
+    read_packet(&mut client).await.unwrap();
+
+    // 2. Send HandshakeResponse41: CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION |
+    //    CLIENT_PLUGIN_AUTH, an empty auth response, and the server's default plugin
+    //    name so the server skips the auth-switch round-trip.
+    let caps = myc::constants::CapabilityFlags::CLIENT_PROTOCOL_41
+        | myc::constants::CapabilityFlags::CLIENT_SECURE_CONNECTION
+        | myc::constants::CapabilityFlags::CLIENT_PLUGIN_AUTH;
+    let caps = caps.bits();
+
+    let mut hs = Vec::new();
+    hs.extend_from_slice(&(caps as u16).to_le_bytes()); // capabilities (lower 2 bytes)
+    hs.extend_from_slice(&((caps >> 16) as u16).to_le_bytes()); // capabilities (upper 2 bytes)
+    hs.extend_from_slice(&0x0100_0000u32.to_le_bytes()); // max packet size
+    hs.push(0x21); // utf8_general_ci
+    hs.extend_from_slice(&[0u8; 23]); // 23 reserved bytes
+    hs.extend_from_slice(b"root");
+    hs.push(0x00); // NUL-terminated username
+    hs.push(0x00); // auth response length (empty)
+    hs.extend_from_slice(b"mysql_native_password");
+    hs.push(0x00); // NUL-terminated auth plugin name
+    write_packet(&mut client, 1, &hs).await.unwrap();
+
+    // 3. Read (and discard) the authentication OK packet.
+    read_packet(&mut client).await.unwrap();
+
+    // 4. Send COM_FIELD_LIST (0x04) for a table, as the CLI does during rehash.
+    let mut cmd = vec![0x04];
+    cmd.extend_from_slice(b"information_schema");
+    cmd.push(0x00);
+    write_packet(&mut client, 0, &cmd).await.unwrap();
+
+    // 5. Read the reply under a timeout: a reply that leaves a strict client blocked
+    //    waiting for more bytes never completes, so this is the does-not-hang check.
+    //    The reply must also be a canonical EOF packet.
+    let reply = tokio::time::timeout(Duration::from_secs(2), read_packet(&mut client))
+        .await
+        .expect("client hung waiting for the COM_FIELD_LIST reply")
+        .unwrap();
+    assert_eq!(reply, vec![0xfe, 0x00, 0x00, 0x00, 0x00]);
+
+    // Close the connection so the server's command loop sees EOF and exits
+    // cleanly; otherwise the server waits for the next packet while we block in
+    // server.await, deadlocking the test.
+    drop(client);
+
+    server.await.unwrap();
 }
