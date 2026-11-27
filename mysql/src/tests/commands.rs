@@ -88,3 +88,65 @@ fn it_handles_list_fields() {
         Command::ListFields(&b"select @@version_comment limit 1"[..])
     );
 }
+
+fn handshake41(
+    caps: CapabilityFlags,
+    user: &str,
+    auth: &[u8],
+    db: Option<&str>,
+    plugin: Option<&str>,
+) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&caps.bits().to_le_bytes());
+    body.extend_from_slice(&0x00FF_FFFFu32.to_le_bytes());
+    body.push(33);
+    body.extend_from_slice(&[0u8; 23]);
+    body.extend_from_slice(user.as_bytes());
+    body.push(0);
+    if caps.contains(CapabilityFlags::CLIENT_SECURE_CONNECTION) {
+        body.push(auth.len() as u8);
+        body.extend_from_slice(auth);
+    } else {
+        body.extend_from_slice(auth);
+        body.push(0);
+    }
+    if let Some(db) = db {
+        body.extend_from_slice(db.as_bytes());
+        body.push(0);
+    }
+    if let Some(plugin) = plugin {
+        body.extend_from_slice(plugin.as_bytes());
+        body.push(0);
+    }
+    body
+}
+
+#[test]
+fn nul_terminated_native_response_keeps_the_plugin_name() {
+    let caps = CapabilityFlags::CLIENT_PROTOCOL_41 | CapabilityFlags::CLIENT_PLUGIN_AUTH;
+    let packet = handshake41(caps, "u", &[0x42; 20], None, Some("mysql_native_password"));
+    let (rest, hs) = client_handshake(&packet, false).unwrap();
+    assert!(rest.is_empty());
+    assert_eq!(hs.auth_response, vec![0x42; 20]);
+    assert_eq!(hs.auth_plugin, b"mysql_native_password");
+    assert!(hs.db.is_none());
+}
+
+#[test]
+fn nul_terminated_response_with_database_then_plugin() {
+    let caps = CapabilityFlags::CLIENT_PROTOCOL_41
+        | CapabilityFlags::CLIENT_CONNECT_WITH_DB
+        | CapabilityFlags::CLIENT_PLUGIN_AUTH;
+    let packet = handshake41(
+        caps,
+        "u",
+        &[0x11; 20],
+        Some("appdb"),
+        Some("caching_sha2_password"),
+    );
+    let (rest, hs) = client_handshake(&packet, false).unwrap();
+    assert!(rest.is_empty());
+    assert_eq!(hs.auth_response, vec![0x11; 20]);
+    assert_eq!(hs.db.as_deref(), Some(&b"appdb"[..]));
+    assert_eq!(hs.auth_plugin, b"caching_sha2_password");
+}
