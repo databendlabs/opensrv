@@ -78,7 +78,13 @@ pub fn client_handshake(i: &[u8], after_tls: bool) -> nom::IResult<&[u8], Client
                 let (i, size) = nom::number::complete::le_u8(i)?;
                 nom::bytes::complete::take(size)(i)?
             } else {
-                nom::bytes::complete::take_until(&b"\0"[..])(i)?
+                // Null-terminated auth-response (no CLIENT_SECURE_CONNECTION).
+                // Consume the trailing NUL; otherwise the plugin name and
+                // optional database are parsed from the wrong offset, and an
+                // empty plugin string would look like a different plugin.
+                let (i, auth_response) = nom::bytes::complete::take_until(&b"\0"[..])(i)?;
+                let (i, _) = nom::bytes::complete::tag(b"\0")(i)?;
+                (i, auth_response)
             };
 
         let (i, db) =
