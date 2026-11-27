@@ -783,10 +783,13 @@ where
                 Err(_) => {
                     // if parser err, we need also stay the conn,
                     // because we can not support all command.
-                    writers::write_ok_packet(
+                    // Reply with ER_UNKNOWN_COM_ERROR (1047 / 08S01) instead of
+                    // an OK packet so a client is never told an unsupported
+                    // command succeeded.
+                    writers::write_err(
+                        ErrorKind::ER_UNKNOWN_COM_ERROR,
+                        b"Unknown command",
                         &mut self.writer,
-                        self.client_capabilities,
-                        OkResponse::default(),
                     )
                     .await?;
                     self.writer.flush_all().await?;

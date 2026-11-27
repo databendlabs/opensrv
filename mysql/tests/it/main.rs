@@ -14,3 +14,4 @@
 
 mod r#async;
 mod secure;
+mod unknown_command;
